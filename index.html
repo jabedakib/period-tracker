@@ -1,447 +1,439 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Period Tracker — Privacy-first (Local Only)</title>
-  <meta name="description" content="Simple, privacy-first period & cycle tracker. Data stays in your browser (localStorage).">
-  <meta name="theme-color" content="#f43f5e">
-  <link rel="icon" href="data:,">
-  <!-- Tailwind via CDN (no build needed) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config = { theme: { extend: {} } };</script>
-  <style>
-    .day-cell { transition: transform .05s ease; }
-    .day-cell.selected { transform: scale(.96); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Period Tracker</title>
+    <!-- Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .day-cell { transition: all 0.2s ease-in-out; }
+        .day-cell:hover { transform: scale(1.05); }
+        .day-cell.selected { transform: scale(0.95); background-color: #fca5a5; }
+        .day-cell.period-logged { background-color: #fca5a5; color: white; font-weight: 600; }
+        .day-cell.period-predicted { background-color: #fecaca; color: #b91c1c; }
+        .day-cell.fertile-window { background-color: #d1fae5; color: #065f46; }
+    </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-indigo-50 text-gray-900">
-  <div class="max-w-6xl mx-auto p-4">
-    <header class="flex items-center justify-between py-4">
-      <div>
-        <h1 class="text-2xl font-bold">Period Tracker</h1>
-        <p class="text-sm text-gray-600">Privacy-first cycle tracker (local-only)</p>
-      </div>
-      <div class="flex gap-2">
-        <!-- We will use custom modals instead of native alerts/confirms -->
-        <button id="helpBtn" class="px-3 py-2 rounded-2xl border">Help</button>
-        <button id="settingsBtn" class="px-3 py-2 rounded-2xl border">Settings</button>
-      </div>
-    </header>
+<body class="bg-gray-100 text-gray-800 p-4 min-h-screen flex items-center justify-center">
+    <div class="container mx-auto p-6 bg-white rounded-3xl shadow-xl max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-rose-500">Period Tracker</h1>
+            <p class="text-gray-500 mt-2">A simple and user-friendly way to track your cycle.</p>
+        </header>
 
-    <main class="grid md:grid-cols-[1.6fr,1fr] gap-6">
-      <!-- Calendar + Predictions -->
-      <section class="space-y-4">
-        <div class="rounded-3xl bg-white/70 shadow p-4">
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <button id="prevMonth" class="px-3 py-1 rounded-2xl border">←</button>
-              <div id="monthLabel" class="font-semibold"></div>
-              <button id="nextMonth" class="px-3 py-1 rounded-2xl border">→</button>
-            </div>
-            <div class="text-xs flex items-center gap-3">
-              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-rose-500/70 inline-block"></span> logged</span>
-              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-rose-400/50 inline-block"></span> predicted</span>
-              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full ring-2 ring-emerald-400 inline-block"></span> fertile</span>
-            </div>
-          </div>
+        <main class="grid lg:grid-cols-3 gap-8">
+            <!-- Main Tracking UI -->
+            <section class="lg:col-span-2 flex flex-col gap-8">
+                <!-- Persistent Alert Bar -->
+                <div id="persistent-alert" class="bg-rose-200 text-rose-800 p-4 rounded-xl font-semibold shadow-md hidden">
+                    <p id="alert-message"></p>
+                </div>
 
-          <div class="grid grid-cols-7 gap-2 text-center text-xs text-gray-600 mb-2">
-            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-          </div>
-          <div id="calendar" class="grid grid-cols-7 gap-2"></div>
-        </div>
+                <!-- Calendar Section -->
+                <div class="bg-gray-50 p-6 rounded-2xl shadow-inner">
+                    <div class="flex justify-between items-center mb-6">
+                        <button id="prevMonthBtn" class="bg-rose-500 text-white p-2 rounded-full hover:bg-rose-600 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                        <div class="flex-grow"></div>
+                        <button id="nextMonthBtn" class="bg-rose-500 text-white p-2 rounded-full hover:bg-rose-600 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Calendar Grids for two months -->
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div>
+                            <h3 id="monthTitle1" class="text-xl font-semibold text-center mb-2"></h3>
+                            <div class="grid grid-cols-7 text-center font-semibold text-sm mb-2">
+                                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                            </div>
+                            <div id="calendar-grid1" class="grid grid-cols-7 gap-2 text-center"></div>
+                        </div>
+                        <div>
+                            <h3 id="monthTitle2" class="text-xl font-semibold text-center mb-2"></h3>
+                            <div class="grid grid-cols-7 text-center font-semibold text-sm mb-2">
+                                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                            </div>
+                            <div id="calendar-grid2" class="grid grid-cols-7 gap-2 text-center"></div>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="rounded-3xl bg-white/70 shadow p-4">
-          <h2 class="font-semibold mb-2">Predictions</h2>
-          <p class="text-sm text-gray-600 mb-3">Calendar-method estimates based on your inputs and history (<span class="italic">not medical advice</span>).</p>
-          <div id="predictions" class="grid sm:grid-cols-2 gap-3"></div>
-        </div>
-      </section>
+                <!-- Log Period Button (moved here) -->
+                <div class="flex justify-center mt-4">
+                    <button id="logPeriodBtn" class="bg-rose-500 text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:bg-rose-600 transition-colors">
+                        Log Period Day
+                    </button>
+                </div>
+            </section>
 
-      <!-- Logger & Data -->
-      <aside class="space-y-4">
-        <div class="rounded-3xl bg-white/70 shadow p-4">
-          <h2 class="font-semibold mb-2">Quick log</h2>
-          <div class="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label class="text-sm">Date</label>
-              <input id="dateInput" type="date" class="w-full px-3 py-2 rounded-2xl border" />
-            </div>
-            <div>
-              <label class="text-sm">Flow (optional)</label>
-              <div class="flex flex-wrap gap-2 mt-2">
-                <button data-flow="light"  class="flowBtn px-3 py-2 rounded-2xl border">light</button>
-                <button data-flow="medium" class="flowBtn px-3 py-2 rounded-2xl border">medium</button>
-                <button data-flow="heavy"  class="flowBtn px-3 py-2 rounded-2xl border">heavy</button>
-                <button id="flowClear" class="px-3 py-2 rounded-2xl">clear</button>
-              </div>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-2 mb-3">
-            <button id="togglePeriod" class="px-3 py-2 rounded-2xl bg-black text-white">Mark period day</button>
-            <button id="addNote" class="px-3 py-2 rounded-2xl border">Add note</button>
-          </div>
-          <label class="text-sm">Note</label>
-          <textarea id="noteInput" rows="3" class="w-full px-3 py-2 rounded-2xl border" placeholder="e.g., mild cramps, ran 3km, slept late…"></textarea>
-        </div>
+            <!-- Tracking and Information Section -->
+            <section class="bg-gray-50 p-6 rounded-2xl shadow-inner flex flex-col justify-between">
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4">Track Your Cycle</h2>
+                    
+                    <!-- Prediction List Section (moved here) -->
+                    <div id="prediction-list" class="bg-gray-100 p-6 rounded-2xl shadow-inner mb-8">
+                        <h3 class="text-xl font-semibold mb-4">Next Prediction</h3>
+                        <ul id="upcoming-dates-list" class="space-y-2">
+                            <!-- Upcoming dates will be generated here -->
+                        </ul>
+                    </div>
 
-        <div class="rounded-3xl bg-white/70 shadow p-4">
-          <h2 class="font-semibold mb-2">Data</h2>
-          <div class="grid grid-cols-2 gap-2 mb-2">
-            <button id="exportJson" class="px-3 py-2 rounded-2xl border">Export JSON</button>
-            <button id="exportCsv" class="px-3 py-2 rounded-2xl border">Export CSV</button>
-          </div>
-          <div class="flex items-center gap-2">
-            <input id="importFile" type="file" accept="application/json" class="text-sm" />
-            <button id="importBtn" class="px-3 py-2 rounded-2xl border">Import</button>
-          </div>
-          <button id="resetBtn" class="mt-3 px-3 py-2 rounded-2xl border border-red-400 text-red-600">Reset all data</button>
-        </div>
+                    <div id="start-tracking-message" class="text-center text-gray-500 p-8">
+                        <p class="text-lg font-bold mb-2">Ready to start tracking?</p>
+                        <p class="text-sm">Click on a date in the calendar and then click the button below to log your first period day.</p>
+                    </div>
 
-        <div class="rounded-3xl bg-white/70 shadow p-4">
-          <h2 class="font-semibold mb-2">Settings</h2>
-          <div class="grid sm:grid-cols-3 gap-3">
-            <div>
-              <label class="text-sm">Typical cycle length</label>
-              <input id="cycleLen" type="number" min="18" max="45" class="w-full px-3 py-2 rounded-2xl border" value="28" />
-            </div>
-            <div>
-              <label class="text-sm">Typical period length</label>
-              <input id="periodLen" type="number" min="2" max="10" class="w-full px-3 py-2 rounded-2xl border" value="5" />
-            </div>
-            <div>
-              <label class="text-sm">Luteal phase length</label>
-              <input id="lutealLen" type="number" min="10" max="17" class="w-full px-3 py-2 rounded-2xl border" value="14" />
-            </div>
-          </div>
-          <label class="inline-flex items-center gap-2 mt-3">
-            <input id="fertileToggle" type="checkbox" checked class="w-4 h-4" />
-            <span class="text-sm">Show fertile window</span>
-          </label>
-        </div>
-      </aside>
-    </main>
+                    <h2 class="text-2xl font-semibold mt-8 mb-4">Settings</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="cycleLength" class="block text-sm font-medium text-gray-700">Typical Cycle Length (days)</label>
+                            <input type="number" id="cycleLength" value="28" min="18" max="45" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 sm:text-sm p-2">
+                        </div>
+                        <div>
+                            <label for="periodLength" class="block text-sm font-medium text-gray-700">Typical Period Length (days)</label>
+                            <input type="number" id="periodLength" value="5" min="2" max="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 sm:text-sm p-2">
+                        </div>
+                    </div>
+                </div>
 
-    <footer class="text-xs text-gray-600 py-8 flex items-center justify-between">
-      <p>© <span id="year"></span> Period Tracker — local-only. No tracking.</p>
-      <div class="flex gap-2">
-        <button id="todayBtn" class="px-3 py-2 rounded-2xl border">Today</button>
-        <button id="selectTodayBtn" class="px-3 py-2 rounded-2xl border">Select today</button>
-      </div>
-    </footer>
-  </div>
-
-  <!-- Custom dialogs to replace browser alerts and confirms -->
-  <dialog id="helpDialog" class="rounded-2xl p-0">
-    <div class="p-6 max-w-lg">
-      <h3 class="font-semibold mb-2">How this works</h3>
-      <ul class="list-disc pl-5 text-sm space-y-2 text-gray-700">
-        <li>Select a date, then use <em>Mark period day</em> to toggle.</li>
-        <li>Predictions use your typical cycle/period lengths + history (±2 day window).</li>
-        <li>Fertile window = ovulation −5…+1; ovulation ≈ next period − luteal length (default 14d).</li>
-        <li>Data stays in your browser (localStorage). Export regularly if needed.</li>
-        <li>Not medical advice; consult a professional for clinical guidance.</li>
-      </ul>
-      <div class="mt-4 text-right">
-        <button class="px-3 py-2 rounded-2xl border" id="closeHelpDialog">Close</button>
-      </div>
+                <div class="mt-8">
+                    <h2 class="text-2xl font-semibold mb-2">Calendar Key</h2>
+                    <ul class="space-y-2">
+                        <li class="flex items-center space-x-2">
+                            <span class="inline-block w-4 h-4 rounded-full bg-rose-400"></span>
+                            <span>Your Logged Period Days</span>
+                        </li>
+                        <li class="flex items-center space-x-2">
+                            <span class="inline-block w-4 h-4 rounded-full bg-red-200"></span>
+                            <span>Predicted Period Days</span>
+                        </li>
+                        <li class="flex items-center space-x-2">
+                            <span class="inline-block w-4 h-4 rounded-full bg-green-200"></span>
+                            <span>Predicted Fertile Window</span>
+                        </li>
+                        <li class="flex items-center space-x-2">
+                            <span class="inline-block w-4 h-4 rounded-full bg-blue-100"></span>
+                            <span>Today's Date</span>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+        </main>
     </div>
-  </dialog>
 
-  <dialog id="messageDialog" class="rounded-2xl p-0">
-    <div class="p-6 max-w-md">
-      <h3 id="messageDialogTitle" class="font-semibold mb-2"></h3>
-      <p id="messageDialogText" class="text-sm text-gray-700"></p>
-      <div class="mt-4 text-right">
-        <button class="px-3 py-2 rounded-2xl border" onclick="this.closest('dialog').close()">OK</button>
-      </div>
-    </div>
-  </dialog>
+    <!-- Custom Dialog -->
+    <dialog id="message-dialog" class="rounded-xl shadow-lg p-6 max-w-sm">
+        <h3 id="dialog-title" class="text-xl font-bold mb-2"></h3>
+        <p id="dialog-message" class="text-gray-700 mb-4"></p>
+        <div class="text-right">
+            <button id="dialog-ok-btn" class="bg-rose-500 text-white px-4 py-2 rounded-full hover:bg-rose-600">OK</button>
+        </div>
+    </dialog>
 
-  <dialog id="confirmDialog" class="rounded-2xl p-0">
-    <div class="p-6 max-w-md">
-      <h3 id="confirmDialogTitle" class="font-semibold mb-2"></h3>
-      <p id="confirmDialogText" class="text-sm text-gray-700"></p>
-      <div class="mt-4 text-right flex gap-2 justify-end">
-        <button class="px-3 py-2 rounded-2xl border" id="confirmDialogCancel">Cancel</button>
-        <button class="px-3 py-2 rounded-2xl border border-red-400 text-red-600" id="confirmDialogOK">Confirm</button>
-      </div>
-    </div>
-  </dialog>
+    <!-- JavaScript for functionality -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const calendarGrid1 = document.getElementById('calendar-grid1');
+            const calendarGrid2 = document.getElementById('calendar-grid2');
+            const monthTitle1 = document.getElementById('monthTitle1');
+            const monthTitle2 = document.getElementById('monthTitle2');
+            const prevMonthBtn = document.getElementById('prevMonthBtn');
+            const nextMonthBtn = document.getElementById('nextMonthBtn');
+            const logPeriodBtn = document.getElementById('logPeriodBtn');
+            const startTrackingMessage = document.getElementById('start-tracking-message');
+            const predictionsContainer = document.getElementById('predictions');
+            const cycleLengthInput = document.getElementById('cycleLength');
+            const periodLengthInput = document.getElementById('periodLength');
+            const persistentAlert = document.getElementById('persistent-alert');
+            const alertMessage = document.getElementById('alert-message');
+            const upcomingDatesList = document.getElementById('upcoming-dates-list');
 
-  <script>
-    // ------- Storage & State -------
-    const STORAGE_KEY = 'period_tracker_v1';
-    const defaultState = {
-      events: [], // {date, type:'period'|'note', flow?, note?}
-      settings: { typicalCycleLength: 28, typicalPeriodLength: 5, lutealLength: 14, showFertileWindow: true },
-    };
-    const state = load();
-    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-    function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(defaultState); } catch { return structuredClone(defaultState); } }
+            // --- State Management ---
+            const STORAGE_KEY_DATA = 'period_tracker_v2_data';
+            const STORAGE_KEY_SETTINGS = 'period_tracker_v2_settings';
+            let currentDate = new Date();
+            let selectedDate = null;
+            let loggedPeriods = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA)) || [];
+            let settings = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS)) || { cycleLength: 28, periodLength: 5 };
 
-    // ------- Utils -------
-    const todayISO = () => new Date().toISOString().slice(0,10);
-    const toISO = d => d.toISOString().slice(0,10);
-    const fromISO = iso => new Date(iso + 'T00:00:00');
-    const addDays = (date, days) => { const d = typeof date==='string'? fromISO(date) : new Date(date); d.setDate(d.getDate()+days); return toISO(d); };
-    const diffDays = (a,b) => Math.round((fromISO(b)-fromISO(a))/86400000);
-    const clamp = (n,min,max) => Math.max(min, Math.min(max,n));
-    function sortEvents() { state.events.sort((a,b)=> a.date.localeCompare(b.date)); }
-    function getStarts() { return state.events.filter(e=> e.type==='period').map(e=> e.date).sort(); }
+            function saveData() {
+                localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(loggedPeriods));
+            }
 
-    function predictNext() {
-      const starts = getStarts();
-      if (!starts.length) return null;
-      const lastStart = starts[starts.length-1];
-      const cycle = clamp(Number(state.settings.typicalCycleLength)||28, 18, 45);
-      const nextStart = addDays(lastStart, cycle);
-      const window = [addDays(nextStart,-2), addDays(nextStart,2)];
-      const periodDays = Array.from({length: clamp(Number(state.settings.typicalPeriodLength)||5,2,10)}, (_,i)=> addDays(nextStart,i));
-      return { lastStart, nextStart, window, periodDays };
-    }
-    function estimateFertile(nextStart) {
-      const luteal = clamp(Number(state.settings.lutealLength)||14,10,17);
-      const ovulation = addDays(nextStart, -luteal);
-      const fertileStart = addDays(ovulation,-5);
-      const fertileEnd = addDays(ovulation,1);
-      return { ovulation, fertileStart, fertileEnd };
-    }
+            function saveSettings() {
+                localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            }
 
-    // ------- Calendar -------
-    let viewDate = new Date();
-    let selectedDate = todayISO();
+            // --- Date Utilities ---
+            const toISO = date => date.toISOString().split('T')[0];
+            const fromISO = iso => new Date(iso + 'T00:00:00');
+            const addDays = (date, days) => {
+                const d = new Date(date);
+                d.setDate(d.getDate() + days);
+                return d;
+            };
+            const diffDays = (date1, date2) => {
+                const d1 = typeof date1 === 'string' ? fromISO(date1) : date1;
+                const d2 = typeof date2 === 'string' ? fromISO(date2) : date2;
+                return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+            };
 
-    function monthMatrix(y,m){
-      const first=new Date(y,m,1); const start=first.getDay(); const days=new Date(y,m+1,0).getDate();
-      const cells=[]; for(let i=0;i<start;i++) cells.push('');
-      for(let d=1; d<=days; d++) cells.push(toISO(new Date(y,m,d)));
-      while(cells.length%7) cells.push('');
-      return cells;
-    }
+            // --- Dialog function ---
+            const messageDialog = document.getElementById('message-dialog');
+            const dialogTitle = document.getElementById('dialog-title');
+            const dialogMessage = document.getElementById('dialog-message');
+            const dialogOkBtn = document.getElementById('dialog-ok-btn');
 
-    function renderCalendar(){
-      const y=viewDate.getFullYear(), m=viewDate.getMonth();
-      document.getElementById('monthLabel').textContent = new Date(y,m).toLocaleString(undefined,{month:'long',year:'numeric'});
-      const grid = document.getElementById('calendar');
-      grid.innerHTML='';
+            function showInfoBox(title, message) {
+                dialogTitle.textContent = title;
+                dialogMessage.textContent = message;
+                messageDialog.showModal();
+            }
 
-      const pred = predictNext();
-      const predSet = new Set(pred? pred.periodDays: []);
-      let fertileSet = new Set();
-      if (pred && state.settings.showFertileWindow){
-        const fw = estimateFertile(pred.nextStart);
-        let d = fw.fertileStart; while(d<=fw.fertileEnd){ fertileSet.add(d); d = addDays(d,1); }
-      }
-      const loggedSet = new Set(state.events.filter(e=>e.type==='period').map(e=>e.date));
+            dialogOkBtn.addEventListener('click', () => {
+                messageDialog.close();
+            });
 
-      for(const iso of monthMatrix(y,m)){
-        const cell=document.createElement('div');
-        if(!iso){ cell.className='h-12'; grid.appendChild(cell); continue; }
-        const isToday = iso===todayISO();
-        const isLogged = loggedSet.has(iso);
-        const isPred = predSet.has(iso);
-        const isFertile = fertileSet.has(iso);
+            // --- Prediction Logic ---
+            function getPredictions(numCycles = 12) {
+                if (loggedPeriods.length === 0) return null;
+                
+                const allPredictions = [];
+                let lastPeriod = fromISO(loggedPeriods[loggedPeriods.length - 1]);
+                const cycleDays = parseInt(settings.cycleLength, 10);
+                const periodDays = parseInt(settings.periodLength, 10);
+                
+                for (let i = 0; i < numCycles; i++) {
+                    const nextPeriodStart = addDays(lastPeriod, cycleDays);
+                    const periodEnd = addDays(nextPeriodStart, periodDays - 1);
+                    const ovulationDay = addDays(nextPeriodStart, -14);
+                    const fertileWindowStart = addDays(ovulationDay, -5);
+                    const fertileWindowEnd = addDays(ovulationDay, 1);
 
-        cell.className =
-          'day-cell h-12 rounded-2xl flex items-center justify-center text-sm font-medium ' +
-          'border text-gray-900 ' +
-          (isLogged
-            ? 'bg-rose-500/20 border-rose-500 text-rose-700 '
-            : isPred
-            ? 'bg-rose-400/10 border-rose-400 text-rose-600 '
-            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 ') +
-          (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') +
-          (isToday ? ' outline outline-2 outline-indigo-500 ' : '') +
-          (selectedDate === iso ? ' selected ' : '');
+                    allPredictions.push({
+                        nextPeriodStart: toISO(nextPeriodStart),
+                        periodEnd: toISO(periodEnd),
+                        ovulationDay: toISO(ovulationDay),
+                        fertileWindowStart: toISO(fertileWindowStart),
+                        fertileWindowEnd: toISO(fertileWindowEnd)
+                    });
+                    
+                    lastPeriod = nextPeriodStart;
+                }
 
-        cell.textContent = new Date(iso).getDate();
-        cell.title = iso + (isLogged? ' • logged period' : isPred? ' • predicted period' : '') + (isFertile? ' • fertile window' : '');
-        cell.onclick = ()=> { selectedDate=iso; document.getElementById('dateInput').value=iso; renderCalendar(); syncToggleLabel(); };
-        grid.appendChild(cell);
-      }
-    }
+                return allPredictions;
+            }
 
-    // ------- Predictions panel -------
-    function renderPredictions(){
-      const box = document.getElementById('predictions');
-      box.innerHTML='';
-      const p = predictNext();
-      if(!p){ box.innerHTML = '<div class="text-sm text-gray-600">Log at least one period start day to see predictions.</div>'; return; }
+            // --- Rendering Functions ---
+            function renderCalendar() {
+                const year1 = currentDate.getFullYear();
+                const month1 = currentDate.getMonth();
 
-      const fertile = estimateFertile(p.nextStart);
-      const card = (title, value, sub, color) => `
-        <div class="p-4 rounded-2xl border ${color}">
-          <div class="text-xs uppercase tracking-wide mb-1">${title}</div>
-          <div class="text-lg font-semibold">${value}</div>
-          ${sub? `<div class="text-sm text-gray-600">${sub}</div>`: ''}
-        </div>`;
-      const fmt = iso => new Date(iso).toLocaleDateString();
+                const nextMonthDate = new Date(year1, month1 + 1, 1);
+                const year2 = nextMonthDate.getFullYear();
+                const month2 = nextMonthDate.getMonth();
+                
+                monthTitle1.textContent = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                monthTitle2.textContent = nextMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                
+                renderMonth(year1, month1, calendarGrid1);
+                renderMonth(year2, month2, calendarGrid2);
+                
+                const predictions = getPredictions(12);
+                renderUpcomingDatesList(predictions);
+            }
 
-      box.innerHTML =
-        card('Next period', fmt(p.nextStart), `Window ${fmt(p.window[0])} – ${fmt(p.window[1])}`, 'border-rose-400/40 bg-rose-500/5')+
-        card('Ovulation (est.)', fmt(fertile.ovulation), state.settings.showFertileWindow? `Fertile ${fmt(fertile.fertileStart)} – ${fmt(fertile.fertileEnd)}` : '', 'border-emerald-400/40 bg-emerald-500/5')+
-        `<div class="sm:col-span-2 p-4 rounded-2xl border border-indigo-400/40 bg-indigo-500/5">
-          <div class="text-xs uppercase tracking-wide mb-1">Your averages</div>
-          <div class="flex flex-wrap gap-6 text-sm">
-            <div>Cycle length: <span class="font-semibold">${avgCycleLength()} days</span></div>
-            <div>Period length: <span class="font-semibold">${state.settings.typicalPeriodLength} days</span></div>
-          </div>
-        </div>`;
-    }
+            function renderMonth(year, month, calendarGrid) {
+                calendarGrid.innerHTML = '';
 
-    function avgCycleLength(){
-      const s = getStarts(); if(s.length<2) return state.settings.typicalCycleLength;
-      let sum=0; for(let i=1;i<s.length;i++) sum += diffDays(s[i-1], s[i]);
-      return Math.round(sum/(s.length-1));
-    }
+                // Days from previous month
+                const firstDay = new Date(year, month, 1);
+                const startingDay = firstDay.getDay();
+                for (let i = 0; i < startingDay; i++) {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.className = 'day-cell p-3 text-gray-400 cursor-not-allowed';
+                    calendarGrid.appendChild(emptyCell);
+                }
 
-    // ------- Actions -------
-    let currentFlow = '';
-    function togglePeriod(){
-      const i = state.events.findIndex(e=> e.type==='period' && e.date===selectedDate);
-      if(i>=0) state.events.splice(i,1);
-      else state.events.push({date:selectedDate, type:'period', flow: currentFlow || undefined});
-      sortEvents(); save(); renderCalendar(); renderPredictions(); syncToggleLabel();
-    }
-    function syncToggleLabel(){
-      const btn = document.getElementById('togglePeriod');
-      const exists = state.events.some(e=> e.type==='period' && e.date===selectedDate);
-      btn.textContent = exists? 'Unmark period day' : 'Mark period day';
-    }
-    function addNote(){
-      const text = document.getElementById('noteInput').value.trim();
-      if(!text) return;
-      state.events.push({date:selectedDate, type:'note', note:text});
-      document.getElementById('noteInput').value='';
-      sortEvents(); save();
-    }
+                // Days of the current month
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const today = new Date();
+                const predictions = getPredictions(12);
 
-    // ------- Custom Dialogs instead of native alerts/confirms -------
-    const messageDialog = document.getElementById('messageDialog');
-    const messageDialogTitle = document.getElementById('messageDialogTitle');
-    const messageDialogText = document.getElementById('messageDialogText');
-    function showMessageBox(title, message) {
-      messageDialogTitle.textContent = title;
-      messageDialogText.textContent = message;
-      messageDialog.showModal();
-    }
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const day = new Date(year, month, i);
+                    const isoDate = toISO(day);
 
-    const confirmDialog = document.getElementById('confirmDialog');
-    const confirmDialogTitle = document.getElementById('confirmDialogTitle');
-    const confirmDialogText = document.getElementById('confirmDialogText');
-    const confirmDialogOK = document.getElementById('confirmDialogOK');
-    const confirmDialogCancel = document.getElementById('confirmDialogCancel');
-    function showConfirmBox(title, message, onConfirm) {
-      confirmDialogTitle.textContent = title;
-      confirmDialogText.textContent = message;
-      confirmDialog.showModal();
-      return new Promise(resolve => {
-        confirmDialogOK.onclick = () => { confirmDialog.close(); onConfirm(); resolve(true); };
-        confirmDialogCancel.onclick = () => { confirmDialog.close(); resolve(false); };
-      });
-    }
+                    const cell = document.createElement('div');
+                    cell.textContent = i;
+                    cell.className = 'day-cell p-3 rounded-xl border border-gray-200 cursor-pointer';
 
-    // ------- Export / Import -------
-    function exportJSON(){
-      const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download='period-tracker-data.json'; a.click(); URL.revokeObjectURL(url);
-    }
-    function exportCSV(){
-      const rows = ["date,type,flow,note"];
-      for (const e of state.events) {
-        // FIXED: Replaced the invalid newline character in the string literal with a space.
-        const n = (e.note || '').replaceAll('\n', ' ').replaceAll(',', ';');
-        rows.push([e.date, e.type, e.flow || '', `"${n}"`].join(','));
-      }
-      const blob=new Blob([rows.join('\n')],{type:'text/csv'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download='period-tracker-data.csv'; a.click();
-      URL.revokeObjectURL(url);
-    }
-    function importJSON(file){
-      const r=new FileReader();
-      r.onload=()=>{ try{
-        const obj=JSON.parse(String(r.result));
-        if(obj && obj.events && obj.settings){
-          state.events=obj.events; state.settings=obj.settings;
-          save(); hydrateSettingsForm(); renderCalendar(); renderPredictions();
-          showMessageBox('Import Complete', 'Your data has been successfully imported.');
-        } else {
-          showMessageBox('Import Failed', 'Invalid file. The file must contain "events" and "settings" data.');
-        }
-      }catch(e){ showMessageBox('Import Failed', `Failed to import: ${e.message}`); } };
-      r.readAsText(file);
-    }
-    function resetAll(){
-      showConfirmBox('Delete All Data', 'Are you sure you want to delete all tracking data? This action cannot be undone.', () => {
-        localStorage.removeItem(STORAGE_KEY);
-        Object.assign(state, structuredClone(defaultState));
-        hydrateSettingsForm(); renderCalendar(); renderPredictions();
-        showMessageBox('Reset Complete', 'All data has been deleted.');
-      });
-    }
+                    if (day.getDate() === today.getDate() && day.getMonth() === today.getMonth() && day.getFullYear() === today.getFullYear()) {
+                        cell.classList.add('bg-blue-100', 'font-bold');
+                    }
+                    if (loggedPeriods.includes(isoDate)) {
+                        cell.classList.add('period-logged');
+                    }
 
-    // ------- Settings binding -------
-    function hydrateSettingsForm(){
-      document.getElementById('cycleLen').value = state.settings.typicalCycleLength;
-      document.getElementById('periodLen').value = state.settings.typicalPeriodLength;
-      document.getElementById('lutealLen').value = state.settings.lutealLength;
-      document.getElementById('fertileToggle').checked = !!state.settings.showFertileWindow;
-    }
-    function bindSettings(){
-      document.getElementById('cycleLen').oninput   = e=> { state.settings.typicalCycleLength = clamp(+e.target.value||28,18,45); save(); renderPredictions(); };
-      document.getElementById('periodLen').oninput  = e=> { state.settings.typicalPeriodLength = clamp(+e.target.value||5,2,10); save(); renderPredictions(); };
-      document.getElementById('lutealLen').oninput  = e=> { state.settings.lutealLength = clamp(+e.target.value||14,10,17); save(); renderPredictions(); };
-      document.getElementById('fertileToggle').onchange = e=> { state.settings.showFertileWindow = !!e.target.checked; save(); renderPredictions(); };
-    }
+                    if (predictions) {
+                        predictions.forEach(p => {
+                            const predictedStart = fromISO(p.nextPeriodStart);
+                            const predictedEnd = fromISO(p.periodEnd);
+                            if (day >= predictedStart && day <= predictedEnd) {
+                                cell.classList.add('period-predicted');
+                            }
+                            const fertileStart = fromISO(p.fertileWindowStart);
+                            const fertileEnd = fromISO(p.fertileWindowEnd);
+                            if (day >= fertileStart && day <= fertileEnd) {
+                                cell.classList.add('fertile-window');
+                            }
+                        });
+                    }
 
-    // ------- Flow buttons -------
-    function bindFlow(){
-      document.querySelectorAll('.flowBtn').forEach(btn=>{
-        btn.onclick = ()=> {
-          currentFlow = btn.dataset.flow;
-          document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white'));
-          btn.classList.add('bg-black','text-white');
-        };
-      });
-      document.getElementById('flowClear').onclick = ()=> {
-        currentFlow='';
-        document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white'));
-      };
-    }
+                    cell.addEventListener('click', () => {
+                        document.querySelectorAll('.day-cell.selected').forEach(s => s.classList.remove('selected'));
+                        cell.classList.add('selected');
+                        selectedDate = isoDate;
+                        updateLogButton();
+                    });
 
-    // ------- Bind UI -------
-    function init(){
-      document.getElementById('year').textContent = new Date().getFullYear();
-      document.getElementById('dateInput').value = selectedDate;
+                    calendarGrid.appendChild(cell);
+                }
+            }
 
-      // Event listeners for main controls
-      document.getElementById('todayBtn').onclick = ()=> { viewDate = new Date(); renderCalendar(); };
-      document.getElementById('selectTodayBtn').onclick = ()=> { selectedDate=todayISO(); document.getElementById('dateInput').value=selectedDate; renderCalendar(); syncToggleLabel(); };
-      document.getElementById('prevMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()-1, 1); renderCalendar(); };
-      document.getElementById('nextMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 1); renderCalendar(); };
-      document.getElementById('dateInput').onchange = e=> { selectedDate = e.target.value; renderCalendar(); syncToggleLabel(); };
-      document.getElementById('togglePeriod').onclick = togglePeriod;
-      document.getElementById('addNote').onclick = addNote;
+            function renderUpcomingDatesList(predictions) {
+                upcomingDatesList.innerHTML = '';
+                if (!predictions || predictions.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = 'Log your first period to see a prediction.';
+                    li.className = 'text-gray-500 italic';
+                    upcomingDatesList.appendChild(li);
+                    return;
+                }
 
-      // Event listeners for data management
-      document.getElementById('exportJson').onclick = exportJSON;
-      document.getElementById('exportCsv').onclick = exportCSV;
-      document.getElementById('importBtn').onclick = ()=> { const f=document.getElementById('importFile').files?.[0]; if(f) importJSON(f); };
-      document.getElementById('resetBtn').onclick = resetAll;
+                // Only show the next prediction
+                const p = predictions[0];
+                const li = document.createElement('li');
+                li.className = 'bg-white p-3 rounded-md shadow-sm';
+                const nextPeriodDate = fromISO(p.nextPeriodStart).toLocaleDateString();
+                const ovulationDay = fromISO(p.ovulationDay).toLocaleDateString();
+                const fertileWindow = `${fromISO(p.fertileWindowStart).toLocaleDateString()} - ${fromISO(p.fertileWindowEnd).toLocaleDateString()}`;
+                
+                li.innerHTML = `
+                    <p><span class="font-semibold text-rose-500">Period:</span> ${nextPeriodDate}</p>
+                    <p><span class="font-semibold text-green-500">Ovulation:</span> ${ovulationDay}</p>
+                    <p><span class="font-semibold text-green-500">Fertile Window:</span> ${fertileWindow}</p>
+                `;
+                upcomingDatesList.appendChild(li);
+            }
 
-      // Event listeners for dialogs and settings
-      document.getElementById('helpBtn').onclick = ()=> document.getElementById('helpDialog').showModal();
-      document.getElementById('closeHelpDialog').onclick = ()=> document.getElementById('helpDialog').close();
-      document.getElementById('settingsBtn').onclick = ()=> showMessageBox('Settings', 'You can adjust your cycle parameters in the panel on the right.');
+            // --- UI Interaction Logic ---
+            function updateLogButton() {
+                if (selectedDate && loggedPeriods.includes(selectedDate)) {
+                    logPeriodBtn.textContent = 'Unlog Period Day';
+                } else {
+                    logPeriodBtn.textContent = 'Log Period Day';
+                }
+            }
 
-      hydrateSettingsForm(); bindSettings(); bindFlow();
-      renderCalendar(); renderPredictions(); syncToggleLabel();
-    }
-    init();
-  </script>
+            logPeriodBtn.addEventListener('click', () => {
+                if (!selectedDate) {
+                    showInfoBox('No Date Selected', 'Please click on a date in the calendar first.');
+                    return;
+                }
+                
+                const index = loggedPeriods.indexOf(selectedDate);
+                if (index > -1) {
+                    loggedPeriods.splice(index, 1);
+                } else {
+                    loggedPeriods.push(selectedDate);
+                    loggedPeriods.sort();
+                }
+
+                saveData();
+                selectedDate = null;
+                document.querySelectorAll('.day-cell.selected').forEach(s => s.classList.remove('selected'));
+                renderCalendar();
+                updateLogButton();
+                checkPeriodAlert();
+            });
+
+            prevMonthBtn.addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() - 1);
+                renderCalendar();
+            });
+
+            nextMonthBtn.addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() + 1);
+                renderCalendar();
+            });
+
+            cycleLengthInput.addEventListener('change', (e) => {
+                settings.cycleLength = e.target.value;
+                saveSettings();
+                renderCalendar();
+            });
+
+            periodLengthInput.addEventListener('change', (e) => {
+                settings.periodLength = e.target.value;
+                saveSettings();
+                renderCalendar();
+            });
+
+            // Set initial input values from saved settings
+            cycleLengthInput.value = settings.cycleLength;
+            periodLengthInput.value = settings.periodLength;
+
+            // --- Initial Render and Alert Logic ---
+            function checkPeriodAlert() {
+                const predictions = getPredictions(1);
+                persistentAlert.style.display = 'none';
+
+                if (predictions && loggedPeriods.length > 0) {
+                    const nextPeriodDate = fromISO(predictions[0].nextPeriodStart);
+                    const daysUntil = diffDays(new Date(), nextPeriodDate);
+                    
+                    if (daysUntil <= 2 && daysUntil >= 0) {
+                        alertMessage.textContent = `Heads up! Your next period is predicted to start in ${daysUntil === 0 ? 'less than a day' : daysUntil + ' days'}.`;
+                        persistentAlert.style.display = 'block';
+                    }
+                }
+                
+                // Show tracking reminder if it's been too long since the last entry
+                if (loggedPeriods.length > 0) {
+                    const lastLoggedDate = fromISO(loggedPeriods[loggedPeriods.length - 1]);
+                    const daysSinceLast = diffDays(lastLoggedDate, new Date());
+                    const typicalCycle = parseInt(settings.cycleLength, 10);
+                    if (daysSinceLast > typicalCycle + 7) {
+                        startTrackingMessage.style.display = 'block';
+                        startTrackingMessage.innerHTML = `
+                            <p class="text-lg font-bold mb-2">It's been a while!</p>
+                            <p class="text-sm">Please log your most recent period day to get accurate predictions.</p>
+                        `;
+                    }
+                } else {
+                    startTrackingMessage.style.display = 'block';
+                    startTrackingMessage.innerHTML = `
+                        <p class="text-lg font-bold mb-2">Ready to start tracking?</p>
+                        <p class="text-sm">Click on a date in the calendar and then click the button below to log your first period day.</p>
+                    `;
+                }
+            }
+            
+            // Initial call to render and check for alerts
+            renderCalendar();
+            checkPeriodAlert();
+        });
+    </script>
 </body>
 </html>
