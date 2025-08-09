@@ -23,6 +23,7 @@
         <p class="text-sm text-gray-600">Privacy-first cycle tracker (local-only)</p>
       </div>
       <div class="flex gap-2">
+        <!-- We will use custom modals instead of native alerts/confirms -->
         <button id="helpBtn" class="px-3 py-2 rounded-2xl border">Help</button>
         <button id="settingsBtn" class="px-3 py-2 rounded-2xl border">Settings</button>
       </div>
@@ -131,7 +132,7 @@
     </footer>
   </div>
 
-  <!-- Simple dialogs -->
+  <!-- Custom dialogs to replace browser alerts and confirms -->
   <dialog id="helpDialog" class="rounded-2xl p-0">
     <div class="p-6 max-w-lg">
       <h3 class="font-semibold mb-2">How this works</h3>
@@ -143,17 +144,28 @@
         <li>Not medical advice; consult a professional for clinical guidance.</li>
       </ul>
       <div class="mt-4 text-right">
-        <button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('helpDialog').close()">Close</button>
+        <button class="px-3 py-2 rounded-2xl border" id="closeHelpDialog">Close</button>
       </div>
     </div>
   </dialog>
 
-  <dialog id="settingsDialog" class="rounded-2xl p-0">
+  <dialog id="messageDialog" class="rounded-2xl p-0">
     <div class="p-6 max-w-md">
-      <h3 class="font-semibold mb-2">Settings</h3>
-      <p class="text-sm text-gray-700">Use the panel on the right to adjust cycle parameters.</p>
+      <h3 id="messageDialogTitle" class="font-semibold mb-2"></h3>
+      <p id="messageDialogText" class="text-sm text-gray-700"></p>
       <div class="mt-4 text-right">
-        <button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('settingsDialog').close()">Close</button>
+        <button class="px-3 py-2 rounded-2xl border" onclick="this.closest('dialog').close()">OK</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmDialog" class="rounded-2xl p-0">
+    <div class="p-6 max-w-md">
+      <h3 id="confirmDialogTitle" class="font-semibold mb-2"></h3>
+      <p id="confirmDialogText" class="text-sm text-gray-700"></p>
+      <div class="mt-4 text-right flex gap-2 justify-end">
+        <button class="px-3 py-2 rounded-2xl border" id="confirmDialogCancel">Cancel</button>
+        <button class="px-3 py-2 rounded-2xl border border-red-400 text-red-600" id="confirmDialogOK">Confirm</button>
       </div>
     </div>
   </dialog>
@@ -306,6 +318,31 @@
       sortEvents(); save();
     }
 
+    // ------- Custom Dialogs instead of native alerts/confirms -------
+    const messageDialog = document.getElementById('messageDialog');
+    const messageDialogTitle = document.getElementById('messageDialogTitle');
+    const messageDialogText = document.getElementById('messageDialogText');
+    function showMessageBox(title, message) {
+      messageDialogTitle.textContent = title;
+      messageDialogText.textContent = message;
+      messageDialog.showModal();
+    }
+
+    const confirmDialog = document.getElementById('confirmDialog');
+    const confirmDialogTitle = document.getElementById('confirmDialogTitle');
+    const confirmDialogText = document.getElementById('confirmDialogText');
+    const confirmDialogOK = document.getElementById('confirmDialogOK');
+    const confirmDialogCancel = document.getElementById('confirmDialogCancel');
+    function showConfirmBox(title, message, onConfirm) {
+      confirmDialogTitle.textContent = title;
+      confirmDialogText.textContent = message;
+      confirmDialog.showModal();
+      return new Promise(resolve => {
+        confirmDialogOK.onclick = () => { confirmDialog.close(); onConfirm(); resolve(true); };
+        confirmDialogCancel.onclick = () => { confirmDialog.close(); resolve(false); };
+      });
+    }
+
     // ------- Export / Import -------
     function exportJSON(){
       const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
@@ -315,8 +352,8 @@
     function exportCSV(){
       const rows = ["date,type,flow,note"];
       for (const e of state.events) {
-        const n = (e.note || '').replaceAll('\n', '
-').replaceAll(',', ';');
+        // FIXED: Replaced the invalid newline character in the string literal with a space.
+        const n = (e.note || '').replaceAll('\n', ' ').replaceAll(',', ';');
         rows.push([e.date, e.type, e.flow || '', `"${n}"`].join(','));
       }
       const blob=new Blob([rows.join('\n')],{type:'text/csv'});
@@ -330,17 +367,21 @@
         const obj=JSON.parse(String(r.result));
         if(obj && obj.events && obj.settings){
           state.events=obj.events; state.settings=obj.settings;
-          save(); hydrateSettingsForm(); renderCalendar(); renderPredictions(); alert('Import complete.');
-        } else alert('Invalid file.');
-      }catch(e){ alert('Failed to import: '+e.message); } };
+          save(); hydrateSettingsForm(); renderCalendar(); renderPredictions();
+          showMessageBox('Import Complete', 'Your data has been successfully imported.');
+        } else {
+          showMessageBox('Import Failed', 'Invalid file. The file must contain "events" and "settings" data.');
+        }
+      }catch(e){ showMessageBox('Import Failed', `Failed to import: ${e.message}`); } };
       r.readAsText(file);
     }
     function resetAll(){
-      if(confirm('Delete all tracking data?')){
+      showConfirmBox('Delete All Data', 'Are you sure you want to delete all tracking data? This action cannot be undone.', () => {
         localStorage.removeItem(STORAGE_KEY);
         Object.assign(state, structuredClone(defaultState));
         hydrateSettingsForm(); renderCalendar(); renderPredictions();
-      }
+        showMessageBox('Reset Complete', 'All data has been deleted.');
+      });
     }
 
     // ------- Settings binding -------
@@ -377,23 +418,25 @@
       document.getElementById('year').textContent = new Date().getFullYear();
       document.getElementById('dateInput').value = selectedDate;
 
+      // Event listeners for main controls
       document.getElementById('todayBtn').onclick = ()=> { viewDate = new Date(); renderCalendar(); };
       document.getElementById('selectTodayBtn').onclick = ()=> { selectedDate=todayISO(); document.getElementById('dateInput').value=selectedDate; renderCalendar(); syncToggleLabel(); };
-
       document.getElementById('prevMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()-1, 1); renderCalendar(); };
       document.getElementById('nextMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 1); renderCalendar(); };
-
       document.getElementById('dateInput').onchange = e=> { selectedDate = e.target.value; renderCalendar(); syncToggleLabel(); };
       document.getElementById('togglePeriod').onclick = togglePeriod;
       document.getElementById('addNote').onclick = addNote;
 
+      // Event listeners for data management
       document.getElementById('exportJson').onclick = exportJSON;
       document.getElementById('exportCsv').onclick = exportCSV;
       document.getElementById('importBtn').onclick = ()=> { const f=document.getElementById('importFile').files?.[0]; if(f) importJSON(f); };
       document.getElementById('resetBtn').onclick = resetAll;
 
+      // Event listeners for dialogs and settings
       document.getElementById('helpBtn').onclick = ()=> document.getElementById('helpDialog').showModal();
-      document.getElementById('settingsBtn').onclick = ()=> document.getElementById('settingsDialog').showModal();
+      document.getElementById('closeHelpDialog').onclick = ()=> document.getElementById('helpDialog').close();
+      document.getElementById('settingsBtn').onclick = ()=> showMessageBox('Settings', 'You can adjust your cycle parameters in the panel on the right.');
 
       hydrateSettingsForm(); bindSettings(); bindFlow();
       renderCalendar(); renderPredictions(); syncToggleLabel();
