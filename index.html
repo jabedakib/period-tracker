@@ -315,7 +315,8 @@
     function exportCSV(){
       const rows = ["date,type,flow,note"];
       for (const e of state.events) {
-        const n = (e.note || '').replaceAll('\n', ' ').replaceAll(',', ';');
+        const n = (e.note || '').replaceAll('\n', '
+').replaceAll(',', ';');
         rows.push([e.date, e.type, e.flow || '', `"${n}"`].join(','));
       }
       const blob=new Blob([rows.join('\n')],{type:'text/csv'});
