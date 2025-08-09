@@ -231,13 +231,18 @@
         const isLogged = loggedSet.has(iso);
         const isPred = predSet.has(iso);
         const isFertile = fertileSet.has(iso);
-        cell.className = 'day-cell h-12 rounded-2xl flex items-center justify-center text-sm border cursor-pointer select-none ' +
-          (isLogged ? 'bg-rose-500/20 border-rose-500 text-rose-700 ' : isPred ? 'bg-rose-400/10 border-rose-400 text-rose-600 ' : 'border-transparent hover:border-gray-300 ') +
-          (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') + (isToday ? ' outline outline-2 outline-indigo-500 ' : '') + (selectedDate===iso? ' selected ': '');
-        cell.textContent = new Date(iso).getDate();
-        cell.title = iso + (isLogged? ' • logged period' : isPred? ' • predicted period' : '') + (isFertile? ' • fertile window' : '');
-        cell.onclick = ()=> { selectedDate=iso; document.getElementById('dateInput').value=iso; renderCalendar(); };
-        grid.appendChild(cell);
+cell.className =
+  'day-cell h-12 rounded-2xl flex items-center justify-center text-sm font-medium ' +
+  'border text-gray-900 ' +
+  (isLogged
+    ? 'bg-rose-500/20 border-rose-500 text-rose-700 '
+    : isPred
+    ? 'bg-rose-400/10 border-rose-400 text-rose-600 '
+    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 ') +
+  (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') +
+  (isToday ? ' outline outline-2 outline-indigo-500 ' : '') +
+  (selectedDate === iso ? ' selected ' : '');
+
       }
     }
 
