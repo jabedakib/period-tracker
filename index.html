@@ -68,10 +68,13 @@
                     </div>
                 </div>
 
-                <!-- Log Period Button -->
-                <div class="flex justify-center mt-4">
+                <!-- Log Period and Reset Buttons -->
+                <div class="flex justify-center mt-4 space-x-4">
                     <button id="logPeriodBtn" class="bg-pink-500 text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:bg-pink-600 transition-colors transform hover:scale-105">
                         Log Period Day
+                    </button>
+                    <button id="resetBtn" class="bg-gray-400 text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:bg-gray-500 transition-colors transform hover:scale-105">
+                        Reset Data
                     </button>
                 </div>
             </section>
@@ -147,6 +150,7 @@
             const prevMonthBtn = document.getElementById('prevMonthBtn');
             const nextMonthBtn = document.getElementById('nextMonthBtn');
             const logPeriodBtn = document.getElementById('logPeriodBtn');
+            const resetBtn = document.getElementById('resetBtn'); // Get the new button
             const startTrackingMessage = document.getElementById('start-tracking-message');
             const cycleLengthInput = document.getElementById('cycleLength');
             const periodLengthInput = document.getElementById('periodLength');
@@ -374,6 +378,25 @@
                 renderCalendar();
                 updateLogButton();
                 checkPeriodAlert();
+            });
+
+            // New reset button logic
+            resetBtn.addEventListener('click', () => {
+                loggedPeriods = [];
+                saveData();
+                
+                settings = { cycleLength: 28, periodLength: 5 };
+                saveSettings();
+                cycleLengthInput.value = settings.cycleLength;
+                periodLengthInput.value = settings.periodLength;
+
+                selectedDate = null;
+                document.querySelectorAll('.day-cell.selected').forEach(s => s.classList.remove('selected'));
+
+                renderCalendar();
+                updateLogButton();
+                checkPeriodAlert();
+                showInfoBox('Data Reset', 'All your period data and settings have been cleared.');
             });
 
             prevMonthBtn.addEventListener('click', () => {
