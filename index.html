@@ -1,0 +1,885 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Calendar, Upload, Download, Trash2, Plus, Settings, MoonStar, Info, FileJson, NotebookText } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+
+/**
+ * Luna — a lightweight, privacy‑first period tracking app
+ * Single‑file React app designed for ChatGPT canvas preview.
+ *
+ * ✅ Local‑only (no servers): stores data in localStorage.
+ * ✅ Quick logging of period days & symptoms.
+ * ✅ Predicts next period window & fertile window (calendar method, not medical advice).
+ * ✅ CSV/JSON export & JSON import.
+ * ✅ Dark‑mode friendly, responsive, accessible.
+ */
+
+// ---------- Types ----------
+interface CycleEvent {
+  date: string; // ISO YYYY-MM-DD
+  type: "period" | "note";
+  symptoms?: string[];
+  flow?: "light" | "medium" | "heavy";
+  note?: string;
+}
+
+interface SettingsState {
+  typicalCycleLength: number; // days, e.g., 28
+  typicalPeriodLength: number; // days, e.g., 5
+  lutealLength: number; // days, default 14
+  showFertileWindow: boolean;
+}
+
+interface AppState {
+  events: CycleEvent[];
+  settings: SettingsState;
+}
+
+// ---------- Utilities ----------
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const toISO = (d: Date) => d.toISOString().slice(0, 10);
+const fromISO = (iso: string) => new Date(iso + "T00:00:00");
+
+function addDays(date: string | Date, days: number) {
+  const d = typeof date === "string" ? fromISO(date) : new Date(date);
+  const r = new Date(d);
+  r.setDate(r.getDate() + days);
+  return toISO(r);
+}
+
+function diffDays(a: string, b: string) {
+  return Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / 86400000);
+}
+
+function formatHuman(iso: string) {
+  const d = fromISO(iso);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+// ---------- Storage ----------
+const STORAGE_KEY = "luna_period_tracker_v1";
+
+function loadState(): AppState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    events: [],
+    settings: { typicalCycleLength: 28, typicalPeriodLength: 5, lutealLength: 14, showFertileWindow: true },
+  };
+}
+
+function saveState(state: AppState) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// ---------- Core logic ----------
+function sortEvents(evts: CycleEvent[]) {
+  return [...evts].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function getPeriodStarts(events: CycleEvent[]): string[] {
+  // Define period start days as logged events with type="period" and flow any.
+  return sortEvents(events).filter(e => e.type === "period").map(e => e.date);
+}
+
+function rollingAverages(starts: string[]) {
+  // Compute inter‑start intervals as cycle lengths
+  const intervals = [] as number[];
+  for (let i = 1; i < starts.length; i++) intervals.push(diffDays(starts[i - 1], starts[i]));
+  if (!intervals.length) return { mean: NaN, last: NaN };
+  const mean = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+  return { mean, last: intervals[intervals.length - 1] };
+}
+
+function predictNextPeriod(starts: string[], settings: SettingsState) {
+  if (!starts.length) return null;
+  const lastStart = starts[starts.length - 1];
+  const cycle = clamp(settings.typicalCycleLength, 18, 45);
+  const nextStart = addDays(lastStart, cycle);
+  const window = [addDays(nextStart, -2), addDays(nextStart, 2)]; // ±2‑day arrival window
+  const periodDays = Array.from({ length: clamp(settings.typicalPeriodLength, 2, 10) }, (_, i) => addDays(nextStart, i));
+  return { lastStart, nextStart, window, periodDays };
+}
+
+function estimateFertileWindow(nextPeriodStart: string, lutealLength: number) {
+  // Ovulation ≈ nextPeriodStart − lutealLength; fertile window = ovulation −5 .. ovulation +1
+  const ovulation = addDays(nextPeriodStart, -lutealLength);
+  const fertileStart = addDays(ovulation, -5);
+  const fertileEnd = addDays(ovulation, 1);
+  return { ovulation, fertileStart, fertileEnd };
+}
+
+function monthMatrix(year: number, month: number) {
+  // Returns an array of weeks; each week is an array of ISO dates (or "" for padding)
+  const first = new Date(year, month, 1);
+  const startDay = first.getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [] as string[];
+  for (let i = 0; i < startDay; i++) cells.push("");
+  for (let d = 1; d <= daysInMonth; d++) cells.push(toISO(new Date(year, month, d)));
+  while (cells.length % 7 !== 0) cells.push("");
+  const weeks: string[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+// ---------- App ----------
+export default function App() {
+  const [state, setState] = useState<AppState>(() => loadState());
+  const [selectedDate, setSelectedDate] = useState<string>(todayISO());
+  const [note, setNote] = useState("");
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [flow, setFlow] = useState<"light" | "medium" | "heavy" | "">("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // Persist
+  useEffect(() => { saveState(state); }, [state]);
+
+  const starts = useMemo(() => getPeriodStarts(state.events), [state.events]);
+  const stats = useMemo(() => rollingAverages(starts), [starts]);
+  const prediction = useMemo(() => predictNextPeriod(starts, state.settings), [starts, state.settings]);
+  const fertile = useMemo(() => prediction ? estimateFertileWindow(prediction.nextStart, state.settings.lutealLength) : null, [prediction, state.settings.lutealLength]);
+
+  // Calendar nav
+  const [viewDate, setViewDate] = useState<Date>(new Date());
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const weeks = monthMatrix(year, month);
+
+  function isBetween(iso: string, a: string, b: string) {
+    return iso >= a && iso <= b;
+  }
+
+  const periodSet = new Set<string>(state.events.filter(e => e.type === "period").map(e => e.date));
+  const predictedSet = new Set<string>(prediction?.periodDays ?? []);
+  const fertileSet = useMemo(() => {
+    if (!fertile) return new Set<string>();
+    const set = new Set<string>();
+    let d = fertile.fertileStart;
+    while (d <= fertile.fertileEnd) { set.add(d); d = addDays(d, 1); }
+    return set;
+  }, [fertile]);
+
+  function toggleSymptom(tag: string) {
+    setSymptoms(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  }
+
+  function logPeriodDay() {
+    const exists = state.events.find(e => e.type === "period" && e.date === selectedDate);
+    if (exists) {
+      // Remove
+      setState(s => ({ ...s, events: s.events.filter(e => !(e.type === "period" && e.date === selectedDate)) }));
+    } else {
+      const ev: CycleEvent = { date: selectedDate, type: "period", flow: (flow || "medium") };
+      setState(s => ({ ...s, events: sortEvents([...s.events, ev]) }));
+    }
+  }
+
+  function addNote() {
+    if (!note.trim() && symptoms.length === 0) return;
+    const ev: CycleEvent = { date: selectedDate, type: "note", note: note.trim() || undefined, symptoms: symptoms.length ? symptoms : undefined };
+    setState(s => ({ ...s, events: sortEvents([...s.events, ev]) }));
+    setNote("");
+    setSymptoms([]);
+  }
+
+  function clearAll() {
+    if (confirm("Delete all tracking data? This cannot be undone.")) {
+      setState({ events: [], settings: state.settings });
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "luna-tracker-data.json"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCSV() {
+    const rows = ["date,type,flow,symptoms,note"];
+    for (const e of state.events) {
+      const s = (e.symptoms || []).join("|");
+      const n = (e.note || "").replaceAll("\n", " ").replaceAll(",", ";");
+      rows.push([e.date, e.type, e.flow || "", s, `"${n}"`].join(","));
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "luna-tracker-data.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImport(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result));
+        if (obj && obj.events && obj.settings) {
+          setState({ events: sortEvents(obj.events), settings: obj.settings });
+          setImportOpen(false);
+        } else {
+          alert("Invalid file format.");
+        }
+      } catch (e) {
+        alert("Failed to import: " + (e as Error).message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Predefined symptom tags
+  const symptomTags = ["cramps", "back pain", "bloating", "headache", "fatigue", "mood swings", "acne", "tender breasts", "low energy", "high energy"];
+
+  // UI helpers
+  function DayCell({ iso }: { iso: string }) {
+    if (!iso) return <div className="h-12 rounded-2xl bg-transparent" />;
+    const isToday = iso === todayISO();
+    const isLogged = periodSet.has(iso);
+    const isPred = predictedSet.has(iso);
+    const isFertile = fertileSet.has(iso) && state.settings.showFertileWindow;
+
+    const base = "h-12 rounded-2xl flex items-center justify-center text-sm cursor-pointer select-none border";
+    const styles = [
+      isLogged && "bg-rose-500/20 border-rose-500 text-rose-700 dark:text-rose-300",
+      !isLogged && isPred && "bg-rose-400/10 border-rose-400 text-rose-600 dark:text-rose-300",
+      isFertile && "ring-2 ring-emerald-400/60",
+      isToday && "outline outline-2 outline-indigo-500",
+      !(isLogged || isPred) && !isFertile && "border-transparent hover:border-gray-300 dark:hover:border-gray-600",
+    ].filter(Boolean).join(" ");
+
+    return (
+      <div
+        onClick={() => setSelectedDate(iso)}
+        className={`${base} ${styles} ${selectedDate === iso ? "scale-95" : ""}`}
+        title={`${iso}${isLogged ? " • logged period" : isPred ? " • predicted period" : ""}${isFertile ? " • fertile window" : ""}`}
+      >
+        {new Date(iso).getDate()}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen w-full bg-gradient-to-br from-rose-50 via-white to-indigo-50 dark:from-gray-950 dark:via-black dark:to-gray-900 text-gray-900 dark:text-gray-100">
+      <header className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-2xl bg-gradient-to-br from-rose-500 to-fuchsia-500 text-white shadow-md"><MoonStar className="w-5 h-5"/></div>
+          <div>
+            <h1 className="text-2xl font-bold leading-tight">Luna</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Privacy‑first period & cycle tracker</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" className="rounded-2xl" onClick={() => setHelpOpen(true)}><Info className="mr-2 w-4 h-4"/>Help</Button>
+          <Button variant="secondary" className="rounded-2xl" onClick={() => setSettingsOpen(true)}><Settings className="mr-2 w-4 h-4"/>Settings</Button>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto p-4 grid md:grid-cols-[1.6fr,1fr] gap-6">
+        {/* Left: Calendar + Predictions */}
+        <section className="space-y-4">
+          <Card className="rounded-3xl">
+            <CardHeader className="pb-0">
+              <CardTitle className="flex items-center gap-2 text-lg"><Calendar className="w-5 h-5"/> Calendar</CardTitle>
+              <CardDescription>Select a day to log period or notes.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" className="rounded-2xl" onClick={() => setViewDate(new Date(year, month - 1, 1))}>←</Button>
+                  <div className="font-semibold">{new Date(year, month).toLocaleString(undefined, { month: "long", year: "numeric" })}</div>
+                  <Button variant="outline" className="rounded-2xl" onClick={() => setViewDate(new Date(year, month + 1, 1))}>→</Button>
+                </div>
+                <div className="text-sm flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-rose-500/70 inline-block"/> logged</span>
+                  <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-rose-400/50 inline-block"/> predicted</span>
+                  {state.settings.showFertileWindow && <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-full ring-2 ring-emerald-400 inline-block"/> fertile</span>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 text-center text-xs text-gray-600 dark:text-gray-400 mb-2">
+                {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => <div key={d}>{d}</div>)}
+              </div>
+
+              <div className="grid grid-cols-7 gap-2">
+                {weeks.flat().map((iso, i) => <DayCell key={i} iso={iso} />)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-3xl">
+            <CardHeader>
+              <CardTitle className="text-lg">Predictions</CardTitle>
+              <CardDescription>Calendar‑method estimates based on your inputs and history.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {prediction ? (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/30">
+                    <div className="text-xs uppercase tracking-wide text-rose-600 dark:text-rose-300 mb-1">Next period</div>
+                    <div className="text-lg font-semibold">{formatHuman(prediction.nextStart)}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Window {formatHuman(prediction.window[0])} – {formatHuman(prediction.window[1])}</div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/30">
+                    <div className="text-xs uppercase tracking-wide text-emerald-600 dark:text-emerald-300 mb-1">Ovulation (est.)</div>
+                    <div className="text-lg font-semibold">{fertile ? formatHuman(fertile.ovulation) : "—"}</div>
+                    {fertile && <div className="text-sm text-gray-600 dark:text-gray-400">Fertile {formatHuman(fertile.fertileStart)} – {formatHuman(fertile.fertileEnd)}</div>}
+                  </div>
+                  <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/30 sm:col-span-2">
+                    <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300 mb-1">Your averages</div>
+                    <div className="flex flex-wrap gap-6 text-sm">
+                      <div><span className="text-gray-600 dark:text-gray-400">Cycle length: </span><span className="font-semibold">{isNaN(stats.mean) ? state.settings.typicalCycleLength : stats.mean} days</span></div>
+                      <div><span className="text-gray-600 dark:text-gray-400">Last cycle: </span><span className="font-semibold">{isNaN(stats.last) ? "—" : `${stats.last} days`}</span></div>
+                      <div><span className="text-gray-600 dark:text-gray-400">Period length: </span><span className="font-semibold">{state.settings.typicalPeriodLength} days</span></div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 dark:text-gray-400">Log at least one period start day to see predictions.</div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Right: Logger & Data */}
+        <aside className="space-y-4">
+          <Card className="rounded-3xl">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><NotebookText className="w-5 h-5"/> Quick log</CardTitle>
+              <CardDescription>Record period days, flow, and symptoms.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="date">Date</Label>
+                  <Input id="date" type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="rounded-2xl" />
+                </div>
+                <div>
+                  <Label>Flow (optional)</Label>
+                  <div className="flex gap-2 mt-2">
+                    {["light","medium","heavy"].map(f => (
+                      <Button key={f} variant={flow===f?"default":"outline"} className="rounded-2xl" onClick={()=> setFlow(f as any)}>{f}</Button>
+                    ))}
+                    <Button variant="ghost" className="rounded-2xl" onClick={()=> setFlow("")}>clear</Button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Label>Symptoms</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {symptomTags.map(tag => (
+                    <button key={tag} onClick={()=>toggleSymptom(tag)} className={`text-xs px-3 py-2 rounded-2xl border ${symptoms.includes(tag)?"bg-gray-900 text-white dark:bg-white dark:text-black":"hover:bg-gray-100 dark:hover:bg-gray-800"}`}>{tag}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="note">Note</Label>
+                <Textarea id="note" value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g., mild cramps, ran 3km, slept late…" className="rounded-2xl" />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button className="rounded-2xl" onClick={logPeriodDay}><Plus className="w-4 h-4 mr-2"/>{state.events.find(e=>e.type==="period" && e.date===selectedDate)?"Unmark period day":"Mark period day"}</Button>
+                <Button variant="secondary" className="rounded-2xl" onClick={addNote}>Add note</Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-3xl">
+            <CardHeader>
+              <CardTitle className="text-lg">Data</CardTitle>
+              <CardDescription>Export, import, or reset your data (local‑only).</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="rounded-2xl" onClick={exportJSON}><Download className="mr-2 w-4 h-4"/> Export JSON</Button>
+                <Button variant="outline" className="rounded-2xl" onClick={exportCSV}><Download className="mr-2 w-4 h-4"/> Export CSV</Button>
+              </div>
+              <Dialog open={importOpen} onOpenChange={setImportOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="secondary" className="rounded-2xl"><Upload className="mr-2 w-4 h-4"/> Import JSON</Button>
+                </DialogTrigger>
+                <DialogContent className="rounded-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Import data from JSON</DialogTitle>
+                    <DialogDescription>Replaces your current data. Make sure you trust the file.</DialogDescription>
+                  </DialogHeader>
+                  <input type="file" accept="application/json" onChange={e=> e.target.files && handleImport(e.target.files[0])} />
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={()=>setImportOpen(false)}>Close</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Button variant="destructive" className="rounded-2xl" onClick={clearAll}><Trash2 className="mr-2 w-4 h-4"/> Reset all data</Button>
+            </CardContent>
+          </Card>
+        </aside>
+      </main>
+
+      {/* Settings */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Cycle settings</DialogTitle>
+            <DialogDescription>These drive predictions. Adjust anytime.</DialogDescription>
+          </DialogHeader>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <Label htmlFor="cycle">Typical cycle length (days)</Label>
+              <Input id="cycle" type="number" min={18} max={45}
+                value={state.settings.typicalCycleLength}
+                onChange={e=> setState(s=> ({...s, settings: {...s.settings, typicalCycleLength: clamp(Number(e.target.value||28),18,45)}}))}
+                className="rounded-2xl"/>
+            </div>
+            <div>
+              <Label htmlFor="period">Typical period length (days)</Label>
+              <Input id="period" type="number" min={2} max={10}
+                value={state.settings.typicalPeriodLength}
+                onChange={e=> setState(s=> ({...s, settings: {...s.settings, typicalPeriodLength: clamp(Number(e.target.value||5),2,10)}}))}
+                className="rounded-2xl"/>
+            </div>
+            <div>
+              <Label htmlFor="luteal">Luteal phase length (days)</Label>
+              <Input id="luteal" type="number" min={10} max={17}
+                value={state.settings.lutealLength}
+                onChange={e=> setState(s=> ({...s, settings: {...s.settings, lutealLength: clamp(Number(e.target.value||14),10,17)}}))}
+                className="rounded-2xl"/>
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border p-3">
+            <div>
+              <div className="font-medium">Show fertile window</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Based on ovulation ≈ next period − luteal length</div>
+            </div>
+            <Switch checked={state.settings.showFertileWindow} onCheckedChange={(v)=> setState(s=> ({...s, settings: {...s.settings, showFertileWindow: Boolean(v)}}))} />
+          </div>
+          <DialogFooter>
+            <Button className="rounded-2xl" onClick={()=> setSettingsOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Help */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="rounded-3xl max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>How Luna works</DialogTitle>
+            <DialogDescription>Fast tips + important notes</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <ul className="list-disc pl-5 space-y-2">
+              <li><strong>Mark period days</strong> by selecting a date and pressing <em>Mark period day</em>. Click again to unmark.</li>
+              <li><strong>Predictions</strong> use your typical cycle & period lengths and the history of logged starts. The window is ±2 days around the estimate.</li>
+              <li><strong>Fertile window</strong> is estimated via the calendar method: ovulation ≈ next period − luteal length (default 14 days); fertile window is ovulation −5 to +1 days.</li>
+              <li><strong>Symptoms & notes</strong> are optional and can be exported anytime. Your data <em>never leaves your device</em>.</li>
+              <li><strong>Reminder:</strong> This is not medical advice. Cycles vary; consult a healthcare professional for clinical guidance.</li>
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button className="rounded-2xl" onClick={()=> setHelpOpen(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <footer className="max-w-6xl mx-auto px-4 py-8 text-xs text-gray-600 dark:text-gray-400">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p>© {new Date().getFullYear()} Luna. Local‑only. No tracking. </p>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" className="rounded-2xl text-xs" onClick={()=> setViewDate(new Date())}>Today</Button>
+            <Button variant="ghost" className="rounded-2xl text-xs" onClick={()=> setSelectedDate(todayISO())}>Select today</Button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+
+<!-- =========================
+Luna Lite — Single-file, No‑Build Version for GitHub Pages
+Instructions: save this whole block as `index.html` in a GitHub repo and enable Pages.
+========================= -->
+
+<!-- BEGIN: index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luna Lite — Period Tracker</title>
+  <meta name="description" content="Privacy‑first period & cycle tracker. Local‑only." />
+  <link rel="icon" href="data:,">
+  <!-- Tailwind via CDN (no build needed) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {} } }
+  </script>
+  <style>
+    .day-cell { transition: transform .05s ease; }
+    .day-cell.selected { transform: scale(.96); }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-indigo-50 text-gray-900">
+  <div class="max-w-6xl mx-auto p-4">
+    <header class="flex items-center justify-between py-4">
+      <div>
+        <h1 class="text-2xl font-bold">Luna Lite</h1>
+        <p class="text-sm text-gray-600">Privacy‑first period & cycle tracker (local‑only)</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="helpBtn" class="px-3 py-2 rounded-2xl border">Help</button>
+        <button id="settingsBtn" class="px-3 py-2 rounded-2xl border">Settings</button>
+      </div>
+    </header>
+
+    <main class="grid md:grid-cols-[1.6fr,1fr] gap-6">
+      <!-- Calendar + Predictions -->
+      <section class="space-y-4">
+        <div class="rounded-3xl bg-white/70 shadow p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <button id="prevMonth" class="px-3 py-1 rounded-2xl border">←</button>
+              <div id="monthLabel" class="font-semibold"></div>
+              <button id="nextMonth" class="px-3 py-1 rounded-2xl border">→</button>
+            </div>
+            <div class="text-xs flex items-center gap-3">
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-rose-500/70 inline-block"></span> logged</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-rose-400/50 inline-block"></span> predicted</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-full ring-2 ring-emerald-400 inline-block"></span> fertile</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-7 gap-2 text-center text-xs text-gray-600 mb-2">
+            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+          </div>
+          <div id="calendar" class="grid grid-cols-7 gap-2"></div>
+        </div>
+
+        <div class="rounded-3xl bg-white/70 shadow p-4">
+          <h2 class="font-semibold mb-2">Predictions</h2>
+          <p class="text-sm text-gray-600 mb-3">Calendar‑method estimates based on your inputs and history (not medical advice).</p>
+          <div id="predictions" class="grid sm:grid-cols-2 gap-3"></div>
+        </div>
+      </section>
+
+      <!-- Logger & Data -->
+      <aside class="space-y-4">
+        <div class="rounded-3xl bg-white/70 shadow p-4">
+          <h2 class="font-semibold mb-2">Quick log</h2>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="text-sm">Date</label>
+              <input id="dateInput" type="date" class="w-full px-3 py-2 rounded-2xl border" />
+            </div>
+            <div>
+              <label class="text-sm">Flow (optional)</label>
+              <div class="flex gap-2 mt-2">
+                <button data-flow="light" class="flowBtn px-3 py-2 rounded-2xl border">light</button>
+                <button data-flow="medium" class="flowBtn px-3 py-2 rounded-2xl border">medium</button>
+                <button data-flow="heavy" class="flowBtn px-3 py-2 rounded-2xl border">heavy</button>
+                <button id="flowClear" class="px-3 py-2 rounded-2xl">clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button id="togglePeriod" class="px-3 py-2 rounded-2xl bg-black text-white">Mark period day</button>
+            <button id="addNote" class="px-3 py-2 rounded-2xl border">Add note</button>
+          </div>
+          <label class="text-sm">Note</label>
+          <textarea id="noteInput" rows="3" class="w-full px-3 py-2 rounded-2xl border" placeholder="e.g., mild cramps, ran 3km, slept late…"></textarea>
+        </div>
+
+        <div class="rounded-3xl bg-white/70 shadow p-4">
+          <h2 class="font-semibold mb-2">Data</h2>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <button id="exportJson" class="px-3 py-2 rounded-2xl border">Export JSON</button>
+            <button id="exportCsv" class="px-3 py-2 rounded-2xl border">Export CSV</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="importFile" type="file" accept="application/json" class="text-sm" />
+            <button id="importBtn" class="px-3 py-2 rounded-2xl border">Import</button>
+          </div>
+          <button id="resetBtn" class="mt-3 px-3 py-2 rounded-2xl border border-red-400 text-red-600">Reset all data</button>
+        </div>
+
+        <div class="rounded-3xl bg-white/70 shadow p-4">
+          <h2 class="font-semibold mb-2">Settings</h2>
+          <div class="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-sm">Typical cycle length</label>
+              <input id="cycleLen" type="number" min="18" max="45" class="w-full px-3 py-2 rounded-2xl border" value="28" />
+            </div>
+            <div>
+              <label class="text-sm">Typical period length</label>
+              <input id="periodLen" type="number" min="2" max="10" class="w-full px-3 py-2 rounded-2xl border" value="5" />
+            </div>
+            <div>
+              <label class="text-sm">Luteal phase length</label>
+              <input id="lutealLen" type="number" min="10" max="17" class="w-full px-3 py-2 rounded-2xl border" value="14" />
+            </div>
+          </div>
+          <label class="inline-flex items-center gap-2 mt-3">
+            <input id="fertileToggle" type="checkbox" checked class="w-4 h-4" />
+            <span class="text-sm">Show fertile window</span>
+          </label>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="text-xs text-gray-600 py-8 flex items-center justify-between">
+      <p>© <span id="year"></span> Luna Lite — local‑only. No tracking.</p>
+      <div class="flex gap-2">
+        <button id="todayBtn" class="px-3 py-2 rounded-2xl border">Today</button>
+        <button id="selectTodayBtn" class="px-3 py-2 rounded-2xl border">Select today</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Simple dialogs -->
+  <dialog id="helpDialog" class="rounded-2xl p-0">
+    <div class="p-6 max-w-lg">
+      <h3 class="font-semibold mb-2">How Luna Lite works</h3>
+      <ul class="list-disc pl-5 text-sm space-y-2 text-gray-700">
+        <li>Click a calendar day (or use the date picker) then use <em>Mark period day</em> to toggle.</li>
+        <li>Predictions use your typical cycle/period lengths and the history of starts (±2 day window).</li>
+        <li>Fertile window = ovulation −5…+1, with ovulation ≈ next period − luteal length (default 14d).</li>
+        <li>All data stays in your browser (localStorage). Export regularly if needed.</li>
+        <li>This is not medical advice; consult a professional for clinical guidance.</li>
+      </ul>
+      <div class="mt-4 text-right"><button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('helpDialog').close()">Close</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="settingsDialog" class="rounded-2xl p-0">
+    <div class="p-6 max-w-md">
+      <h3 class="font-semibold mb-2">Tip</h3>
+      <p class="text-sm text-gray-700">You can quickly change settings in the right panel; this dialog is just a shortcut.</p>
+      <div class="mt-4 text-right"><button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('settingsDialog').close()">Close</button></div>
+    </div>
+  </dialog>
+
+  <script>
+    // ------- Storage & State -------
+    const STORAGE_KEY = 'luna_lite_v1';
+    const defaultState = {
+      events: [], // {date, type:'period'|'note', flow?, note?}
+      settings: { typicalCycleLength: 28, typicalPeriodLength: 5, lutealLength: 14, showFertileWindow: true },
+    };
+    const state = load();
+
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(defaultState); } catch { return structuredClone(defaultState); } }
+
+    // ------- Utils -------
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const toISO = d => d.toISOString().slice(0,10);
+    const fromISO = iso => new Date(iso + 'T00:00:00');
+    const addDays = (date, days) => { const d = typeof date==='string'? fromISO(date) : new Date(date); d.setDate(d.getDate()+days); return toISO(d); };
+    const diffDays = (a,b) => Math.round((fromISO(b)-fromISO(a))/86400000);
+    const clamp = (n,min,max) => Math.max(min, Math.min(max,n));
+
+    function sortEvents() { state.events.sort((a,b)=> a.date.localeCompare(b.date)); }
+    function getStarts() { return state.events.filter(e=> e.type==='period').map(e=> e.date).sort(); }
+    function predictNext() {
+      const starts = getStarts();
+      if (!starts.length) return null;
+      const lastStart = starts[starts.length-1];
+      const cycle = clamp(Number(state.settings.typicalCycleLength)||28, 18, 45);
+      const nextStart = addDays(lastStart, cycle);
+      const window = [addDays(nextStart,-2), addDays(nextStart,2)];
+      const periodDays = Array.from({length: clamp(Number(state.settings.typicalPeriodLength)||5,2,10)}, (_,i)=> addDays(nextStart,i));
+      return { lastStart, nextStart, window, periodDays };
+    }
+    function estimateFertile(nextStart) {
+      const luteal = clamp(Number(state.settings.lutealLength)||14,10,17);
+      const ovulation = addDays(nextStart, -luteal);
+      const fertileStart = addDays(ovulation,-5);
+      const fertileEnd = addDays(ovulation,1);
+      return { ovulation, fertileStart, fertileEnd };
+    }
+
+    // ------- Calendar -------
+    let viewDate = new Date();
+    let selectedDate = todayISO();
+
+    function monthMatrix(y,m){
+      const first=new Date(y,m,1); const start=first.getDay(); const days=new Date(y,m+1,0).getDate();
+      const cells=[]; for(let i=0;i<start;i++) cells.push('');
+      for(let d=1; d<=days; d++) cells.push(toISO(new Date(y,m,d)));
+      while(cells.length%7) cells.push('');
+      return cells;
+    }
+
+    function renderCalendar(){
+      const y=viewDate.getFullYear(), m=viewDate.getMonth();
+      document.getElementById('monthLabel').textContent = new Date(y,m).toLocaleString(undefined,{month:'long',year:'numeric'});
+      const grid = document.getElementById('calendar');
+      grid.innerHTML='';
+
+      const pred = predictNext();
+      const predSet = new Set(pred? pred.periodDays: []);
+      let fertileSet = new Set();
+      if (pred && state.settings.showFertileWindow){
+        const fw = estimateFertile(pred.nextStart);
+        let d = fw.fertileStart; while(d<=fw.fertileEnd){ fertileSet.add(d); d = addDays(d,1); }
+      }
+
+      const loggedSet = new Set(state.events.filter(e=>e.type==='period').map(e=>e.date));
+
+      for(const iso of monthMatrix(y,m)){
+        const cell=document.createElement('div');
+        if(!iso){ cell.className='h-12'; grid.appendChild(cell); continue; }
+        const isToday = iso===todayISO();
+        const isLogged = loggedSet.has(iso);
+        const isPred = predSet.has(iso);
+        const isFertile = fertileSet.has(iso);
+        cell.className = 'day-cell h-12 rounded-2xl flex items-center justify-center text-sm border cursor-pointer select-none ' +
+          (isLogged ? 'bg-rose-500/20 border-rose-500 text-rose-700 ' : isPred ? 'bg-rose-400/10 border-rose-400 text-rose-600 ' : 'border-transparent hover:border-gray-300 ') +
+          (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') + (isToday ? ' outline outline-2 outline-indigo-500 ' : '') + (selectedDate===iso? ' selected ': '');
+        cell.textContent = new Date(iso).getDate();
+        cell.title = iso + (isLogged? ' • logged period' : isPred? ' • predicted period' : '') + (isFertile? ' • fertile window' : '');
+        cell.onclick = ()=> { selectedDate=iso; document.getElementById('dateInput').value=iso; renderCalendar(); };
+        grid.appendChild(cell);
+      }
+    }
+
+    // ------- Predictions panel -------
+    function renderPredictions(){
+      const box = document.getElementById('predictions');
+      box.innerHTML='';
+      const p = predictNext();
+      if(!p){ box.innerHTML = '<div class="text-sm text-gray-600">Log at least one period start day to see predictions.</div>'; return; }
+
+      const fertile = estimateFertile(p.nextStart);
+      const card = (title, value, sub, color) => `
+        <div class="p-4 rounded-2xl border ${color}">
+          <div class="text-xs uppercase tracking-wide mb-1">${title}</div>
+          <div class="text-lg font-semibold">${value}</div>
+          ${sub? `<div class="text-sm text-gray-600">${sub}</div>`: ''}
+        </div>`;
+
+      const fmt = iso => new Date(iso).toLocaleDateString();
+      box.innerHTML =
+        card('Next period', fmt(p.nextStart), `Window ${fmt(p.window[0])} – ${fmt(p.window[1])}`, 'border-rose-400/40 bg-rose-500/5')+
+        card('Ovulation (est.)', fmt(fertile.ovulation), state.settings.showFertileWindow? `Fertile ${fmt(fertile.fertileStart)} – ${fmt(fertile.fertileEnd)}` : '', 'border-emerald-400/40 bg-emerald-500/5')+
+        `<div class="sm:col-span-2 p-4 rounded-2xl border border-indigo-400/40 bg-indigo-500/5">
+          <div class="text-xs uppercase tracking-wide mb-1">Your averages</div>
+          <div class="flex flex-wrap gap-6 text-sm">
+            <div>Cycle length: <span class="font-semibold">${avgCycleLength()} days</span></div>
+            <div>Period length: <span class="font-semibold">${state.settings.typicalPeriodLength} days</span></div>
+          </div>
+        </div>`;
+    }
+
+    function avgCycleLength(){
+      const s = getStarts(); if(s.length<2) return state.settings.typicalCycleLength;
+      let sum=0; for(let i=1;i<s.length;i++) sum += diffDays(s[i-1], s[i]);
+      return Math.round(sum/(s.length-1));
+    }
+
+    // ------- Actions -------
+    function togglePeriod(){
+      const i = state.events.findIndex(e=> e.type==='period' && e.date===selectedDate);
+      if(i>=0) state.events.splice(i,1); else state.events.push({date:selectedDate, type:'period', flow: currentFlow||undefined});
+      sortEvents(); save(); renderCalendar(); renderPredictions(); syncToggleLabel();
+    }
+
+    function syncToggleLabel(){
+      const btn = document.getElementById('togglePeriod');
+      const exists = state.events.some(e=> e.type==='period' && e.date===selectedDate);
+      btn.textContent = exists? 'Unmark period day' : 'Mark period day';
+    }
+
+    function addNote(){
+      const text = document.getElementById('noteInput').value.trim();
+      if(!text) return;
+      state.events.push({date:selectedDate, type:'note', note:text});
+      document.getElementById('noteInput').value='';
+      sortEvents(); save();
+    }
+
+    function exportJSON(){
+      const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='luna-lite-data.json'; a.click(); URL.revokeObjectURL(url);
+    }
+    function exportCSV(){
+      const rows=["date,type,flow,note"]; for(const e of state.events){ const n=(e.note||'').replaceAll('
+',' ').replaceAll(',',';'); rows.push([e.date,e.type,e.flow||'', `"${n}"`].join(',')); }
+      const blob=new Blob([rows.join('
+')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='luna-lite-data.csv'; a.click(); URL.revokeObjectURL(url);
+    }
+    function importJSON(file){
+      const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); if(obj&&obj.events&&obj.settings){ state.events=obj.events; state.settings=obj.settings; save(); hydrateSettingsForm(); renderCalendar(); renderPredictions(); alert('Import complete.'); } else alert('Invalid file.'); }catch(e){ alert('Failed to import: '+e.message); } }; r.readAsText(file);
+    }
+    function resetAll(){ if(confirm('Delete all tracking data?')){ localStorage.removeItem(STORAGE_KEY); Object.assign(state, structuredClone(defaultState)); hydrateSettingsForm(); renderCalendar(); renderPredictions(); }}
+
+    // ------- Settings binding -------
+    function hydrateSettingsForm(){
+      document.getElementById('cycleLen').value = state.settings.typicalCycleLength;
+      document.getElementById('periodLen').value = state.settings.typicalPeriodLength;
+      document.getElementById('lutealLen').value = state.settings.lutealLength;
+      document.getElementById('fertileToggle').checked = !!state.settings.showFertileWindow;
+    }
+
+    function bindSettings(){
+      document.getElementById('cycleLen').oninput = e=> { state.settings.typicalCycleLength = clamp(+e.target.value||28,18,45); save(); renderPredictions(); };
+      document.getElementById('periodLen').oninput = e=> { state.settings.typicalPeriodLength = clamp(+e.target.value||5,2,10); save(); renderPredictions(); };
+      document.getElementById('lutealLen').oninput = e=> { state.settings.lutealLength = clamp(+e.target.value||14,10,17); save(); renderPredictions(); };
+      document.getElementById('fertileToggle').onchange = e=> { state.settings.showFertileWindow = !!e.target.checked; save(); renderPredictions(); };
+    }
+
+    // ------- Flow buttons -------
+    let currentFlow = '';
+    function bindFlow(){
+      document.querySelectorAll('.flowBtn').forEach(btn=>{
+        btn.onclick = ()=> { currentFlow = btn.dataset.flow; document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white')); btn.classList.add('bg-black','text-white'); };
+      });
+      document.getElementById('flowClear').onclick = ()=> { currentFlow=''; document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white')); };
+    }
+
+    // ------- Bind UI -------
+    function init(){
+      document.getElementById('year').textContent = new Date().getFullYear();
+      document.getElementById('dateInput').value = selectedDate;
+      document.getElementById('todayBtn').onclick = ()=> { viewDate = new Date(); renderCalendar(); };
+      document.getElementById('selectTodayBtn').onclick = ()=> { selectedDate=todayISO(); document.getElementById('dateInput').value=selectedDate; renderCalendar(); syncToggleLabel(); };
+
+      document.getElementById('prevMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()-1, 1); renderCalendar(); };
+      document.getElementById('nextMonth').onclick = ()=> { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 1); renderCalendar(); };
+
+      document.getElementById('dateInput').onchange = e=> { selectedDate = e.target.value; renderCalendar(); syncToggleLabel(); };
+      document.getElementById('togglePeriod').onclick = togglePeriod;
+      document.getElementById('addNote').onclick = addNote;
+
+      document.getElementById('exportJson').onclick = exportJSON;
+      document.getElementById('exportCsv').onclick = exportCSV;
+      document.getElementById('importBtn').onclick = ()=> { const f=document.getElementById('importFile').files?.[0]; if(f) importJSON(f); };
+      document.getElementById('resetBtn').onclick = resetAll;
+
+      document.getElementById('helpBtn').onclick = ()=> document.getElementById('helpDialog').showModal();
+      document.getElementById('settingsBtn').onclick = ()=> document.getElementById('settingsDialog').showModal();
+
+      hydrateSettingsForm(); bindSettings(); bindFlow();
+      renderCalendar(); renderPredictions(); syncToggleLabel();
+    }
+
+    init();
+  </script>
+</body>
+</html>
+<!-- END: index.html -->
