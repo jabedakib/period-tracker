@@ -1,17 +1,15 @@
-<!-- BEGIN: index.html -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Luna Lite — Period Tracker</title>
-  <meta name="description" content="Privacy‑first period & cycle tracker. Local‑only." />
+  <title>Period Tracker — Privacy-first (Local Only)</title>
+  <meta name="description" content="Simple, privacy-first period & cycle tracker. Data stays in your browser (localStorage).">
+  <meta name="theme-color" content="#f43f5e">
   <link rel="icon" href="data:,">
   <!-- Tailwind via CDN (no build needed) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = { theme: { extend: {} } }
-  </script>
+  <script>tailwind.config = { theme: { extend: {} } };</script>
   <style>
     .day-cell { transition: transform .05s ease; }
     .day-cell.selected { transform: scale(.96); }
@@ -21,8 +19,8 @@
   <div class="max-w-6xl mx-auto p-4">
     <header class="flex items-center justify-between py-4">
       <div>
-        <h1 class="text-2xl font-bold">Luna Lite</h1>
-        <p class="text-sm text-gray-600">Privacy‑first period & cycle tracker (local‑only)</p>
+        <h1 class="text-2xl font-bold">Period Tracker</h1>
+        <p class="text-sm text-gray-600">Privacy-first cycle tracker (local-only)</p>
       </div>
       <div class="flex gap-2">
         <button id="helpBtn" class="px-3 py-2 rounded-2xl border">Help</button>
@@ -55,7 +53,7 @@
 
         <div class="rounded-3xl bg-white/70 shadow p-4">
           <h2 class="font-semibold mb-2">Predictions</h2>
-          <p class="text-sm text-gray-600 mb-3">Calendar‑method estimates based on your inputs and history (not medical advice).</p>
+          <p class="text-sm text-gray-600 mb-3">Calendar-method estimates based on your inputs and history (<span class="italic">not medical advice</span>).</p>
           <div id="predictions" class="grid sm:grid-cols-2 gap-3"></div>
         </div>
       </section>
@@ -71,10 +69,10 @@
             </div>
             <div>
               <label class="text-sm">Flow (optional)</label>
-              <div class="flex gap-2 mt-2">
-                <button data-flow="light" class="flowBtn px-3 py-2 rounded-2xl border">light</button>
+              <div class="flex flex-wrap gap-2 mt-2">
+                <button data-flow="light"  class="flowBtn px-3 py-2 rounded-2xl border">light</button>
                 <button data-flow="medium" class="flowBtn px-3 py-2 rounded-2xl border">medium</button>
-                <button data-flow="heavy" class="flowBtn px-3 py-2 rounded-2xl border">heavy</button>
+                <button data-flow="heavy"  class="flowBtn px-3 py-2 rounded-2xl border">heavy</button>
                 <button id="flowClear" class="px-3 py-2 rounded-2xl">clear</button>
               </div>
             </div>
@@ -125,7 +123,7 @@
     </main>
 
     <footer class="text-xs text-gray-600 py-8 flex items-center justify-between">
-      <p>© <span id="year"></span> Luna Lite — local‑only. No tracking.</p>
+      <p>© <span id="year"></span> Period Tracker — local-only. No tracking.</p>
       <div class="flex gap-2">
         <button id="todayBtn" class="px-3 py-2 rounded-2xl border">Today</button>
         <button id="selectTodayBtn" class="px-3 py-2 rounded-2xl border">Select today</button>
@@ -136,35 +134,38 @@
   <!-- Simple dialogs -->
   <dialog id="helpDialog" class="rounded-2xl p-0">
     <div class="p-6 max-w-lg">
-      <h3 class="font-semibold mb-2">How Luna Lite works</h3>
+      <h3 class="font-semibold mb-2">How this works</h3>
       <ul class="list-disc pl-5 text-sm space-y-2 text-gray-700">
-        <li>Click a calendar day (or use the date picker) then use <em>Mark period day</em> to toggle.</li>
-        <li>Predictions use your typical cycle/period lengths and the history of starts (±2 day window).</li>
-        <li>Fertile window = ovulation −5…+1, with ovulation ≈ next period − luteal length (default 14d).</li>
-        <li>All data stays in your browser (localStorage). Export regularly if needed.</li>
-        <li>This is not medical advice; consult a professional for clinical guidance.</li>
+        <li>Select a date, then use <em>Mark period day</em> to toggle.</li>
+        <li>Predictions use your typical cycle/period lengths + history (±2 day window).</li>
+        <li>Fertile window = ovulation −5…+1; ovulation ≈ next period − luteal length (default 14d).</li>
+        <li>Data stays in your browser (localStorage). Export regularly if needed.</li>
+        <li>Not medical advice; consult a professional for clinical guidance.</li>
       </ul>
-      <div class="mt-4 text-right"><button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('helpDialog').close()">Close</button></div>
+      <div class="mt-4 text-right">
+        <button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('helpDialog').close()">Close</button>
+      </div>
     </div>
   </dialog>
 
   <dialog id="settingsDialog" class="rounded-2xl p-0">
     <div class="p-6 max-w-md">
-      <h3 class="font-semibold mb-2">Tip</h3>
-      <p class="text-sm text-gray-700">You can quickly change settings in the right panel; this dialog is just a shortcut.</p>
-      <div class="mt-4 text-right"><button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('settingsDialog').close()">Close</button></div>
+      <h3 class="font-semibold mb-2">Settings</h3>
+      <p class="text-sm text-gray-700">Use the panel on the right to adjust cycle parameters.</p>
+      <div class="mt-4 text-right">
+        <button class="px-3 py-2 rounded-2xl border" onclick="document.getElementById('settingsDialog').close()">Close</button>
+      </div>
     </div>
   </dialog>
 
   <script>
     // ------- Storage & State -------
-    const STORAGE_KEY = 'luna_lite_v1';
+    const STORAGE_KEY = 'period_tracker_v1';
     const defaultState = {
       events: [], // {date, type:'period'|'note', flow?, note?}
       settings: { typicalCycleLength: 28, typicalPeriodLength: 5, lutealLength: 14, showFertileWindow: true },
     };
     const state = load();
-
     function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
     function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(defaultState); } catch { return structuredClone(defaultState); } }
 
@@ -175,9 +176,9 @@
     const addDays = (date, days) => { const d = typeof date==='string'? fromISO(date) : new Date(date); d.setDate(d.getDate()+days); return toISO(d); };
     const diffDays = (a,b) => Math.round((fromISO(b)-fromISO(a))/86400000);
     const clamp = (n,min,max) => Math.max(min, Math.min(max,n));
-
     function sortEvents() { state.events.sort((a,b)=> a.date.localeCompare(b.date)); }
     function getStarts() { return state.events.filter(e=> e.type==='period').map(e=> e.date).sort(); }
+
     function predictNext() {
       const starts = getStarts();
       if (!starts.length) return null;
@@ -221,7 +222,6 @@
         const fw = estimateFertile(pred.nextStart);
         let d = fw.fertileStart; while(d<=fw.fertileEnd){ fertileSet.add(d); d = addDays(d,1); }
       }
-
       const loggedSet = new Set(state.events.filter(e=>e.type==='period').map(e=>e.date));
 
       for(const iso of monthMatrix(y,m)){
@@ -231,18 +231,23 @@
         const isLogged = loggedSet.has(iso);
         const isPred = predSet.has(iso);
         const isFertile = fertileSet.has(iso);
-cell.className =
-  'day-cell h-12 rounded-2xl flex items-center justify-center text-sm font-medium ' +
-  'border text-gray-900 ' +
-  (isLogged
-    ? 'bg-rose-500/20 border-rose-500 text-rose-700 '
-    : isPred
-    ? 'bg-rose-400/10 border-rose-400 text-rose-600 '
-    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 ') +
-  (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') +
-  (isToday ? ' outline outline-2 outline-indigo-500 ' : '') +
-  (selectedDate === iso ? ' selected ' : '');
 
+        cell.className =
+          'day-cell h-12 rounded-2xl flex items-center justify-center text-sm font-medium ' +
+          'border text-gray-900 ' +
+          (isLogged
+            ? 'bg-rose-500/20 border-rose-500 text-rose-700 '
+            : isPred
+            ? 'bg-rose-400/10 border-rose-400 text-rose-600 '
+            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 ') +
+          (isFertile ? ' ring-2 ring-emerald-400/60 ' : '') +
+          (isToday ? ' outline outline-2 outline-indigo-500 ' : '') +
+          (selectedDate === iso ? ' selected ' : '');
+
+        cell.textContent = new Date(iso).getDate();
+        cell.title = iso + (isLogged? ' • logged period' : isPred? ' • predicted period' : '') + (isFertile? ' • fertile window' : '');
+        cell.onclick = ()=> { selectedDate=iso; document.getElementById('dateInput').value=iso; renderCalendar(); syncToggleLabel(); };
+        grid.appendChild(cell);
       }
     }
 
@@ -260,8 +265,8 @@ cell.className =
           <div class="text-lg font-semibold">${value}</div>
           ${sub? `<div class="text-sm text-gray-600">${sub}</div>`: ''}
         </div>`;
-
       const fmt = iso => new Date(iso).toLocaleDateString();
+
       box.innerHTML =
         card('Next period', fmt(p.nextStart), `Window ${fmt(p.window[0])} – ${fmt(p.window[1])}`, 'border-rose-400/40 bg-rose-500/5')+
         card('Ovulation (est.)', fmt(fertile.ovulation), state.settings.showFertileWindow? `Fertile ${fmt(fertile.fertileStart)} – ${fmt(fertile.fertileEnd)}` : '', 'border-emerald-400/40 bg-emerald-500/5')+
@@ -281,18 +286,18 @@ cell.className =
     }
 
     // ------- Actions -------
+    let currentFlow = '';
     function togglePeriod(){
       const i = state.events.findIndex(e=> e.type==='period' && e.date===selectedDate);
-      if(i>=0) state.events.splice(i,1); else state.events.push({date:selectedDate, type:'period', flow: currentFlow||undefined});
+      if(i>=0) state.events.splice(i,1);
+      else state.events.push({date:selectedDate, type:'period', flow: currentFlow || undefined});
       sortEvents(); save(); renderCalendar(); renderPredictions(); syncToggleLabel();
     }
-
     function syncToggleLabel(){
       const btn = document.getElementById('togglePeriod');
       const exists = state.events.some(e=> e.type==='period' && e.date===selectedDate);
       btn.textContent = exists? 'Unmark period day' : 'Mark period day';
     }
-
     function addNote(){
       const text = document.getElementById('noteInput').value.trim();
       if(!text) return;
@@ -301,21 +306,41 @@ cell.className =
       sortEvents(); save();
     }
 
+    // ------- Export / Import -------
     function exportJSON(){
       const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
       const url = URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download='luna-lite-data.json'; a.click(); URL.revokeObjectURL(url);
+      const a=document.createElement('a'); a.href=url; a.download='period-tracker-data.json'; a.click(); URL.revokeObjectURL(url);
     }
     function exportCSV(){
-      const rows=["date,type,flow,note"]; for(const e of state.events){ const n=(e.note||'').replaceAll('
-',' ').replaceAll(',',';'); rows.push([e.date,e.type,e.flow||'', `"${n}"`].join(',')); }
-      const blob=new Blob([rows.join('
-')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='luna-lite-data.csv'; a.click(); URL.revokeObjectURL(url);
+      const rows = ["date,type,flow,note"];
+      for (const e of state.events) {
+        const n = (e.note || '').replaceAll('\n', ' ').replaceAll(',', ';');
+        rows.push([e.date, e.type, e.flow || '', `"${n}"`].join(','));
+      }
+      const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='period-tracker-data.csv'; a.click();
+      URL.revokeObjectURL(url);
     }
     function importJSON(file){
-      const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); if(obj&&obj.events&&obj.settings){ state.events=obj.events; state.settings=obj.settings; save(); hydrateSettingsForm(); renderCalendar(); renderPredictions(); alert('Import complete.'); } else alert('Invalid file.'); }catch(e){ alert('Failed to import: '+e.message); } }; r.readAsText(file);
+      const r=new FileReader();
+      r.onload=()=>{ try{
+        const obj=JSON.parse(String(r.result));
+        if(obj && obj.events && obj.settings){
+          state.events=obj.events; state.settings=obj.settings;
+          save(); hydrateSettingsForm(); renderCalendar(); renderPredictions(); alert('Import complete.');
+        } else alert('Invalid file.');
+      }catch(e){ alert('Failed to import: '+e.message); } };
+      r.readAsText(file);
     }
-    function resetAll(){ if(confirm('Delete all tracking data?')){ localStorage.removeItem(STORAGE_KEY); Object.assign(state, structuredClone(defaultState)); hydrateSettingsForm(); renderCalendar(); renderPredictions(); }}
+    function resetAll(){
+      if(confirm('Delete all tracking data?')){
+        localStorage.removeItem(STORAGE_KEY);
+        Object.assign(state, structuredClone(defaultState));
+        hydrateSettingsForm(); renderCalendar(); renderPredictions();
+      }
+    }
 
     // ------- Settings binding -------
     function hydrateSettingsForm(){
@@ -324,27 +349,33 @@ cell.className =
       document.getElementById('lutealLen').value = state.settings.lutealLength;
       document.getElementById('fertileToggle').checked = !!state.settings.showFertileWindow;
     }
-
     function bindSettings(){
-      document.getElementById('cycleLen').oninput = e=> { state.settings.typicalCycleLength = clamp(+e.target.value||28,18,45); save(); renderPredictions(); };
-      document.getElementById('periodLen').oninput = e=> { state.settings.typicalPeriodLength = clamp(+e.target.value||5,2,10); save(); renderPredictions(); };
-      document.getElementById('lutealLen').oninput = e=> { state.settings.lutealLength = clamp(+e.target.value||14,10,17); save(); renderPredictions(); };
+      document.getElementById('cycleLen').oninput   = e=> { state.settings.typicalCycleLength = clamp(+e.target.value||28,18,45); save(); renderPredictions(); };
+      document.getElementById('periodLen').oninput  = e=> { state.settings.typicalPeriodLength = clamp(+e.target.value||5,2,10); save(); renderPredictions(); };
+      document.getElementById('lutealLen').oninput  = e=> { state.settings.lutealLength = clamp(+e.target.value||14,10,17); save(); renderPredictions(); };
       document.getElementById('fertileToggle').onchange = e=> { state.settings.showFertileWindow = !!e.target.checked; save(); renderPredictions(); };
     }
 
     // ------- Flow buttons -------
-    let currentFlow = '';
     function bindFlow(){
       document.querySelectorAll('.flowBtn').forEach(btn=>{
-        btn.onclick = ()=> { currentFlow = btn.dataset.flow; document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white')); btn.classList.add('bg-black','text-white'); };
+        btn.onclick = ()=> {
+          currentFlow = btn.dataset.flow;
+          document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white'));
+          btn.classList.add('bg-black','text-white');
+        };
       });
-      document.getElementById('flowClear').onclick = ()=> { currentFlow=''; document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white')); };
+      document.getElementById('flowClear').onclick = ()=> {
+        currentFlow='';
+        document.querySelectorAll('.flowBtn').forEach(b=> b.classList.remove('bg-black','text-white'));
+      };
     }
 
     // ------- Bind UI -------
     function init(){
       document.getElementById('year').textContent = new Date().getFullYear();
       document.getElementById('dateInput').value = selectedDate;
+
       document.getElementById('todayBtn').onclick = ()=> { viewDate = new Date(); renderCalendar(); };
       document.getElementById('selectTodayBtn').onclick = ()=> { selectedDate=todayISO(); document.getElementById('dateInput').value=selectedDate; renderCalendar(); syncToggleLabel(); };
 
@@ -366,9 +397,7 @@ cell.className =
       hydrateSettingsForm(); bindSettings(); bindFlow();
       renderCalendar(); renderPredictions(); syncToggleLabel();
     }
-
     init();
   </script>
 </body>
 </html>
-<!-- END: index.html -->
