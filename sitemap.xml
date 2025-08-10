@@ -3,6 +3,20 @@
   <url>
     <loc>https://jabedakib.github.io/period-tracker/</loc>
     <lastmod>2025-08-10</lastmod>
-    <priority>1.00</priority>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://jabedakib.github.io/period-tracker/privacy.html</loc>
+    <lastmod>2025-08-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://jabedakib.github.io/period-tracker/about.html</loc>
+    <lastmod>2025-08-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
   </url>
 </urlset>
+
